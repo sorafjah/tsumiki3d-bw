@@ -192,7 +192,6 @@
         #confirmModal .custom-modal-content { max-width: 350px; }
         .confirm-actions { margin-top: 20px; display: flex; justify-content: center; gap: 15px; }
         
-        /* ★★★ 変更したスタイル ★★★ */
         #confirmNoButton {
             background-color: #d4d4d8;
             color: #3f3f46;
@@ -235,7 +234,6 @@
             <button id="layer-up" class="move-block-button">▲</button>
             <div id="layer-info" class="layer-info">全表示</div>
             <button id="reset-layers" class="action-button">全表示</button>
-            <!-- ★★★ 追加したHTML ★★★ -->
             <button id="toggle-center-point" class="action-button">中心非表示</button>
         </div>
     </div>
@@ -378,7 +376,7 @@
         }
 
         let scene, camera, renderer, orbitControls;
-        let invisiblePlane, centerPoint; // centerPoint を宣言
+        let invisiblePlane, centerPoint;
         const cubes = [];
         const cubeDataMap = new Map();
         
@@ -388,6 +386,7 @@
         let selectedGroup = null;
         let selectedCube = null;
 
+        let minLayer = 0.5;
         let maxLayer = 0;
         let currentVisibleLayer = Infinity;
 
@@ -469,10 +468,8 @@
             orbitControls.enableDamping = true;
             orbitControls.target.set(0, cubeSize / 2, 0);
 
-            // 回転中心の目印を追加
             const centerPointGeometry = new THREE.SphereGeometry(0.05, 16, 16);
-            // ★★★ 変更したコード ★★★
-            const centerPointMaterial = new THREE.MeshBasicMaterial({ color: 0xf59e0b }); // オレンジ色に変更
+            const centerPointMaterial = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
             centerPoint = new THREE.Mesh(centerPointGeometry, centerPointMaterial);
             centerPoint.position.copy(orbitControls.target);
             scene.add(centerPoint);
@@ -490,12 +487,10 @@
             setupBlockControls();
             setupLayerControls();
             setupRotationControls();
-            // ★★★ 追加したコード ★★★
             setupCenterPointToggle();
             animate();
         }
         
-        // ★★★ 追加した関数 ★★★
         function setupCenterPointToggle() {
             document.getElementById('toggle-center-point').addEventListener('click', (e) => {
                 if (centerPoint) {
@@ -513,10 +508,13 @@
 
         function updateLayerState() {
             const oldMaxLayer = maxLayer;
-            maxLayer = 0;
             if (cubes.length > 0) {
                 const yPositions = cubes.map(c => c.position.y);
                 maxLayer = Math.max(...yPositions);
+                minLayer = Math.min(...yPositions);
+            } else {
+                maxLayer = 0;
+                minLayer = 0.5;
             }
 
             if (currentVisibleLayer === Infinity || oldMaxLayer !== maxLayer) {
@@ -525,6 +523,9 @@
             
             if (currentVisibleLayer > maxLayer) {
                 currentVisibleLayer = maxLayer;
+            }
+            if (currentVisibleLayer < minLayer) {
+                currentVisibleLayer = minLayer;
             }
             
             updateLayerVisibility();
@@ -535,22 +536,35 @@
                 cube.visible = cube.position.y <= currentVisibleLayer;
             });
             const layerInfo = document.getElementById('layer-info');
-            if (currentVisibleLayer >= maxLayer) {
+
+            if (Math.abs(currentVisibleLayer - maxLayer) < 0.01) {
                 layerInfo.textContent = '全表示';
             } else {
-                const layerNumber = (currentVisibleLayer + cubeSize / 2);
-                layerInfo.textContent = `${layerNumber}段目まで表示`;
+                const displayLayer = Math.round((currentVisibleLayer - 0.5) / cubeSize) + 1;
+                if (displayLayer > 0) {
+                     layerInfo.textContent = `${displayLayer}段目まで表示`;
+                } else if (displayLayer === 0) {
+                     layerInfo.textContent = `地下1段目まで表示`;
+                }
+                 else {
+                     layerInfo.textContent = `地下${1 - displayLayer}段目まで表示`;
+                }
             }
         }
         
         function changeLayer(direction) {
-            const newLayer = currentVisibleLayer + direction * cubeSize;
-            if (newLayer < cubeSize / 2) return;
-
-            currentVisibleLayer = newLayer;
-            if (currentVisibleLayer > maxLayer) {
-                currentVisibleLayer = maxLayer;
+            let newLayer = currentVisibleLayer + direction * cubeSize;
+            
+            if (direction === -1 && newLayer < minLayer) {
+                newLayer = minLayer;
             }
+            if (direction === 1 && newLayer > maxLayer) {
+                newLayer = maxLayer;
+            }
+
+            if (Math.abs(newLayer - currentVisibleLayer) < 0.01) return;
+            
+            currentVisibleLayer = newLayer;
             updateLayerVisibility();
         }
 
@@ -950,24 +964,40 @@
             updateGroupButtonState();
         }
 
+        // ★★★ 変更した関数 ★★★
         async function onCanvasDblClickLogic() {
-             if (isGroupMode) return;
+            if (isGroupMode) return;
             raycaster.setFromCamera(pointer, camera);
             const visibleCubes = cubes.filter(c => c.visible);
-            const intersects = raycaster.intersectObjects([invisiblePlane, ...visibleCubes], false); 
-            if (intersects.length === 0 || !intersects[0].face) return;
-            const intersect = intersects[0];
+            
+            // 1. まずブロックとの交差をチェック
+            let cubeIntersects = raycaster.intersectObjects(visibleCubes, false);
+            let intersect = null;
+
+            if (cubeIntersects.length > 0) {
+                // ブロックにヒットした場合
+                intersect = cubeIntersects[0];
+            } else {
+                // ブロックにヒットしなかった場合、地面との交差をチェック
+                let planeIntersects = raycaster.intersectObjects([invisiblePlane], false);
+                if (planeIntersects.length > 0) {
+                    intersect = planeIntersects[0];
+                }
+            }
+
+            if (!intersect || !intersect.face) return; // 交差がなければ終了
+            
             const newPosition = new THREE.Vector3();
+            
             if (intersect.object === invisiblePlane) { 
                 newPosition.set( Math.round(intersect.point.x), cubeSize / 2, Math.round(intersect.point.z) );
             } else { 
                 newPosition.copy(intersect.object.position).addScaledVector(intersect.face.normal, cubeSize);
             }
+            
             newPosition.x = Math.round(newPosition.x);
             newPosition.y = Math.round((newPosition.y - cubeSize/2) / cubeSize) * cubeSize + cubeSize/2;
             newPosition.z = Math.round(newPosition.z);
-            
-            if (newPosition.y < cubeSize/2) newPosition.y = cubeSize/2;
             
             let overlap = false;
             for (const cube of visibleCubes) {
@@ -976,11 +1006,16 @@
                     break; 
                 }
             }
+            
             if (!overlap) {
                 try {
                     await addDoc(cubesCollectionRef, { x: newPosition.x, y: newPosition.y, z: newPosition.z });
-                } catch (e) { showUserMessage("ブロックの追加に失敗しました。"); }
-            } else { showUserMessage("ここにはブロックを置けません。"); }
+                } catch (e) { 
+                    showUserMessage("ブロックの追加に失敗しました。"); 
+                }
+            } else { 
+                showUserMessage("ここにはブロックを置けません。"); 
+            }
         }
         
         function createCubeMesh(position, docId) {
