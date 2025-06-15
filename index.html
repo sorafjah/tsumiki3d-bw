@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>3Dブロック積み木アプリ (白黒・正射影)</title>
+    <title>3Dブロック積み木アプリ</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="importmap">
         {
@@ -61,32 +61,84 @@
             border-color: #d97706;
         }
         .action-button.orange:hover { background-color: #d97706; }
+        .action-button.active {
+            background-color: #a1a1aa;
+            color: white;
+            border-color: #71717a;
+        }
+        .action-button.active:hover {
+            background-color: #71717a;
+        }
         
-        #block-controls-panel { 
+        .panel {
             position: absolute; 
-            bottom: 110px;
-            right: 20px; 
             background-color: rgba(255,255,255,0.85); 
             border-radius: 8px; 
             padding:10px; 
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             border: 1px solid rgba(0,0,0,0.08);
+            z-index: 10;
+        }
+
+        #block-controls-panel { 
+            bottom: 30px;
+            right: 20px; 
             display: grid; 
             grid-template-areas: ". up ." "left . right" ". down ." "y-up y-up y-up" "y-down y-down y-down"; 
             grid-template-columns: repeat(3, 1fr); 
             gap: 5px; 
             width: 160px; 
-            z-index: 10; 
         }
 
-        .move-block-button { background-color: #d4d4d8; color:#3f3f46; border:none; border-radius:5px; width:100%; height:35px; display:flex; justify-content:center; align-items:center; cursor:pointer; font-size: 18px; transition: background-color 0.3s; }
-        .move-block-button:hover { background-color: #a1a1aa; }
-        #move-z-plus { grid-area: up; }
-        #move-x-minus { grid-area: left; }
-        #move-x-plus { grid-area: right; }
-        #move-z-minus { grid-area: down; }
-        #move-y-plus { grid-area: y-up; margin-top: 5px;}
-        #move-y-minus { grid-area: y-down; margin-top: 5px;}
+        #layer-controls-panel {
+            bottom: 30px;
+            left: 20px;
+            width: 160px;
+        }
+        #layer-controls-panel .title, #rotation-controls-panel .title {
+            text-align: center;
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        #layer-controls-panel .button-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5px;
+        }
+        #layer-controls-panel .layer-info {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 5px;
+            font-size: 14px;
+            background-color: #f0f0f0;
+            border-radius: 4px;
+        }
+        #reset-layers, #toggle-center-point {
+            grid-column: 1 / -1;
+        }
+
+        #rotation-controls-panel {
+            bottom: 280px;
+            right: 20px;
+            width: 160px;
+            display: none;
+        }
+        #rotation-controls-panel .button-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5px;
+        }
+
+        .move-block-button, .rotate-button { background-color: #d4d4d8; color:#3f3f46; border:none; border-radius:5px; width:100%; height:35px; display:flex; justify-content:center; align-items:center; cursor:pointer; font-size: 14px; transition: background-color 0.3s; }
+        .move-block-button:hover, .rotate-button:hover { background-color: #a1a1aa; }
+        #move-z-plus { grid-area: up; font-size: 18px; }
+        #move-x-minus { grid-area: left; font-size: 18px; }
+        #move-x-plus { grid-area: right; font-size: 18px; }
+        #move-z-minus { grid-area: down; font-size: 18px; }
+        #move-y-plus { grid-area: y-up; }
+        #move-y-minus { grid-area: y-down; }
 
         #instructionText { position: absolute; top: 20px; right: 20px; padding: 8px 12px; background-color: rgba(0,0,0,0.05); color: #333; border: 1px solid rgba(0,0,0,0.1); border-radius: 5px; font-size: 13px; z-index: 10; text-align: right; }
         #loading-indicator { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 20px 30px; background-color: rgba(0,0,0,0.75); color: white; border-radius: 8px; font-size: 18px; z-index: 2500; display: none; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
@@ -139,6 +191,16 @@
 
         #confirmModal .custom-modal-content { max-width: 350px; }
         .confirm-actions { margin-top: 20px; display: flex; justify-content: center; gap: 15px; }
+        
+        /* ★★★ 変更したスタイル ★★★ */
+        #confirmNoButton {
+            background-color: #d4d4d8;
+            color: #3f3f46;
+            border: none;
+        }
+        #confirmNoButton:hover {
+            background-color: #a1a1aa;
+        }
     </style>
 </head>
 <body>
@@ -159,14 +221,34 @@
     <div id="userInfo"></div>
     
     <div class="controls">
+        <button id="groupButton" class="action-button">グループ化</button>
         <button id="saveLoadButton" class="action-button">保存/読込</button>
         <button id="deleteButton" class="action-button">削除</button>
         <button id="fixViewButton" class="action-button">視点固定</button>
         <button id="logoutButton" class="action-button">ログアウト</button>
     </div>
 
-    <div id="block-controls-panel">
-        <!-- 変更点: 上下矢印の挙動を修正 -->
+    <div id="layer-controls-panel" class="panel">
+        <div class="title">レイヤー操作</div>
+        <div class="button-group">
+            <button id="layer-down" class="move-block-button">▼</button>
+            <button id="layer-up" class="move-block-button">▲</button>
+            <div id="layer-info" class="layer-info">全表示</div>
+            <button id="reset-layers" class="action-button">全表示</button>
+            <!-- ★★★ 追加したHTML ★★★ -->
+            <button id="toggle-center-point" class="action-button">中心非表示</button>
+        </div>
+    </div>
+    
+    <div id="rotation-controls-panel" class="panel">
+        <div class="title">回転</div>
+         <div class="button-group">
+            <button id="rotate-y" class="rotate-button">横回転</button>
+            <button id="rotate-x" class="rotate-button">縦回転</button>
+        </div>
+    </div>
+
+    <div id="block-controls-panel" class="panel">
         <button id="move-z-plus" class="move-block-button" data-axis="z" data-dir="-1" title="手前へ移動">▲</button>
         <button id="move-x-minus" class="move-block-button" data-axis="x" data-dir="-1" title="左へ移動">◀</button>
         <button id="move-x-plus" class="move-block-button" data-axis="x" data-dir="1" title="右へ移動">▶</button>
@@ -177,7 +259,7 @@
 
     <div id="customModal" class="custom-modal"><div class="custom-modal-content"><span id="customModalClose" class="custom-modal-close" title="閉じる">&times;</span><p id="customModalMessage"></p></div></div>
     <div id="saveModal" class="custom-modal"><div class="custom-modal-content"><span id="saveModalClose" class="custom-modal-close" title="閉じる">&times;</span><h3>保存と読込</h3><div class="save-new-section"><input type="text" id="saveNameInput" placeholder="作品名 (例: はじめての城)"><button id="saveNewButton">現在の状態で新規保存</button></div><div id="savedStatesList"><p>保存した作品はありません。</p></div></div></div>
-    <div id="confirmModal" class="custom-modal"><div class="custom-modal-content"><p id="confirmModalMessage"></p><div class="confirm-actions"><button id="confirmYesButton" class="action-button">はい</button><button id="confirmNoButton" class="action-button orange">いいえ</button></div></div></div>
+    <div id="confirmModal" class="custom-modal"><div class="custom-modal-content"><p id="confirmModalMessage"></p><div class="confirm-actions"><button id="confirmYesButton" class="action-button">はい</button><button id="confirmNoButton" class="action-button">いいえ</button></div></div></div>
 
     <script type="module">
         import * as THREE from 'three';
@@ -273,22 +355,16 @@
                             return;
                         }
                         
-                        if (currentNickname) {
-                            const sanitizedNickname = currentNickname.replace(/[\.#$\[\]]/g, '_');
-                            const nicknamePath = `artifacts/${appId}/nicknames/${sanitizedNickname}`;
-                            cubesCollectionRef = collection(db, `${nicknamePath}/cubes`);
-                            savesCollectionRef = collection(db, `${nicknamePath}/saves`);
-                            userInfo.textContent = `ログイン中: ${currentNickname}`;
-                            userInfo.style.display = 'block';
-                            logoutButton.style.display = 'block';
-                        } else {
-                            const userPath = `artifacts/${appId}/users/${userId}`;
-                            cubesCollectionRef = collection(db, `${userPath}/cubes`);
-                            savesCollectionRef = collection(db, `${userPath}/saves`);
-                            userInfo.textContent = 'オフラインモード';
-                            userInfo.style.display = 'block';
-                            logoutButton.style.display = 'none';
-                        }
+                        const basePath = currentNickname 
+                            ? `artifacts/${appId}/nicknames/${currentNickname.replace(/[\.#$\[\]]/g, '_')}`
+                            : `artifacts/${appId}/users/${userId}`;
+
+                        cubesCollectionRef = collection(db, `${basePath}/cubes`);
+                        savesCollectionRef = collection(db, `${basePath}/saves`);
+                        
+                        userInfo.textContent = currentNickname ? `ログイン中: ${currentNickname}` : 'オフラインモード';
+                        userInfo.style.display = 'block';
+                        logoutButton.style.display = currentNickname ? 'block' : 'none';
 
                         isAuthReady = true; 
                         resolve(); 
@@ -302,11 +378,19 @@
         }
 
         let scene, camera, renderer, orbitControls;
-        let invisiblePlane;
+        let invisiblePlane, centerPoint; // centerPoint を宣言
         const cubes = [];
         const cubeDataMap = new Map();
-        let selectedCube = null;
         
+        let isGroupMode = false;
+        const groupSelection = new Set();
+        const cubeGroups = [];
+        let selectedGroup = null;
+        let selectedCube = null;
+
+        let maxLayer = 0;
+        let currentVisibleLayer = Infinity;
+
         const raycaster = new THREE.Raycaster();
         const pointer = new THREE.Vector2();
         const cubeSize = 1;
@@ -316,6 +400,47 @@
         const DOUBLE_TAP_TIMEOUT = 300;
         let touchStartPointer = { x: 0, y: 0 };
         const MAX_TAP_MOVE_THRESHOLD = 20;
+
+        function onWindowResize() {
+            const aspect = window.innerWidth / window.innerHeight;
+            const frustumSize = 15;
+            camera.left = frustumSize * aspect / -2;
+            camera.right = frustumSize * aspect / 2;
+            camera.top = frustumSize / 2;
+            camera.bottom = frustumSize / -2;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onPointerDown(event) {
+            const rect = renderer.domElement.getBoundingClientRect();
+            pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            if (event.pointerType === 'touch') {
+                touchStartPointer.x = event.clientX;
+                touchStartPointer.y = event.clientY;
+            }
+        }
+
+        function onCanvasClick(event) { if (event.pointerType !== 'touch') onCanvasClickLogic(); }
+        async function onCanvasDblClick(event) { if (event.pointerType !== 'touch') onCanvasDblClickLogic(); }
+        
+        function onCanvasTouchEnd(event) {
+            const currentTime = new Date().getTime();
+            const timeSinceLastTouch = currentTime - lastTouchTime;
+            const touch = event.changedTouches[0]; 
+            if (!touch) return; 
+            const rect = renderer.domElement.getBoundingClientRect();
+            const deltaX = Math.abs(touch.clientX - touchStartPointer.x);
+            const deltaY = Math.abs(touch.clientY - touchStartPointer.y);
+            if (deltaX < MAX_TAP_MOVE_THRESHOLD && deltaY < MAX_TAP_MOVE_THRESHOLD) {
+                event.preventDefault();
+                pointer.x = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
+                pointer.y = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
+                if (timeSinceLastTouch < DOUBLE_TAP_TIMEOUT) { onCanvasDblClickLogic(); lastTouchTime = 0; } 
+                else { onCanvasClickLogic(); lastTouchTime = currentTime; }
+            } else { lastTouchTime = 0; }
+        }
 
         function initThreeJS() {
             const container = document.getElementById('container');
@@ -344,18 +469,94 @@
             orbitControls.enableDamping = true;
             orbitControls.target.set(0, cubeSize / 2, 0);
 
+            // 回転中心の目印を追加
+            const centerPointGeometry = new THREE.SphereGeometry(0.05, 16, 16);
+            // ★★★ 変更したコード ★★★
+            const centerPointMaterial = new THREE.MeshBasicMaterial({ color: 0xf59e0b }); // オレンジ色に変更
+            centerPoint = new THREE.Mesh(centerPointGeometry, centerPointMaterial);
+            centerPoint.position.copy(orbitControls.target);
+            scene.add(centerPoint);
+
             window.addEventListener('resize', onWindowResize);
             renderer.domElement.addEventListener('pointerdown', onPointerDown, false);
             renderer.domElement.addEventListener('click', onCanvasClick, false);
             renderer.domElement.addEventListener('dblclick', onCanvasDblClick, false);
             renderer.domElement.addEventListener('touchend', onCanvasTouchEnd, false);
+            document.getElementById('groupButton').addEventListener('click', handleGroupButtonClick);
             document.getElementById('saveLoadButton').addEventListener('click', openSavePanel);
-            document.getElementById('saveNewButton').addEventListener('click', saveCurrentState);
-            document.getElementById('deleteButton').addEventListener('click', deleteSelectedCube);
+            document.getElementById('deleteButton').addEventListener('click', deleteSelection);
             document.getElementById('fixViewButton').addEventListener('click', toggleViewpointFix);
             
             setupBlockControls();
+            setupLayerControls();
+            setupRotationControls();
+            // ★★★ 追加したコード ★★★
+            setupCenterPointToggle();
             animate();
+        }
+        
+        // ★★★ 追加した関数 ★★★
+        function setupCenterPointToggle() {
+            document.getElementById('toggle-center-point').addEventListener('click', (e) => {
+                if (centerPoint) {
+                    centerPoint.visible = !centerPoint.visible;
+                    e.target.textContent = centerPoint.visible ? '中心非表示' : '中心表示';
+                }
+            });
+        }
+        
+        function setupLayerControls() {
+            document.getElementById('layer-up').addEventListener('click', () => changeLayer(1));
+            document.getElementById('layer-down').addEventListener('click', () => changeLayer(-1));
+            document.getElementById('reset-layers').addEventListener('click', resetLayers);
+        }
+
+        function updateLayerState() {
+            const oldMaxLayer = maxLayer;
+            maxLayer = 0;
+            if (cubes.length > 0) {
+                const yPositions = cubes.map(c => c.position.y);
+                maxLayer = Math.max(...yPositions);
+            }
+
+            if (currentVisibleLayer === Infinity || oldMaxLayer !== maxLayer) {
+                currentVisibleLayer = maxLayer;
+            }
+            
+            if (currentVisibleLayer > maxLayer) {
+                currentVisibleLayer = maxLayer;
+            }
+            
+            updateLayerVisibility();
+        }
+
+        function updateLayerVisibility() {
+            cubes.forEach(cube => {
+                cube.visible = cube.position.y <= currentVisibleLayer;
+            });
+            const layerInfo = document.getElementById('layer-info');
+            if (currentVisibleLayer >= maxLayer) {
+                layerInfo.textContent = '全表示';
+            } else {
+                const layerNumber = (currentVisibleLayer + cubeSize / 2);
+                layerInfo.textContent = `${layerNumber}段目まで表示`;
+            }
+        }
+        
+        function changeLayer(direction) {
+            const newLayer = currentVisibleLayer + direction * cubeSize;
+            if (newLayer < cubeSize / 2) return;
+
+            currentVisibleLayer = newLayer;
+            if (currentVisibleLayer > maxLayer) {
+                currentVisibleLayer = maxLayer;
+            }
+            updateLayerVisibility();
+        }
+
+        function resetLayers() {
+            currentVisibleLayer = maxLayer;
+            updateLayerVisibility();
         }
         
         async function openSavePanel() {
@@ -456,7 +657,7 @@
         }
 
         function deleteState(saveId, saveName) {
-            showConfirmation(`「${saveName}」を本当に削除しますか？この操作は元に戻せません。`, async () => {
+            showConfirmation(`「${saveName}」を本当に削除しますか？`, async () => {
                 loadingIndicator.style.display = 'block';
                 try {
                     await deleteDoc(doc(savesCollectionRef, saveId));
@@ -465,97 +666,295 @@
                 finally { loadingIndicator.style.display = 'none'; }
             });
         }
-        
+
         function setupBlockControls() {
             document.getElementById('block-controls-panel').addEventListener('click', (e) => {
                 if(e.target.classList.contains('move-block-button')) {
                     const axis = e.target.dataset.axis;
                     const direction = parseInt(e.target.dataset.dir);
-                    moveSelectedBlock(axis, direction);
+                    moveSelection(axis, direction);
                 }
             });
         }
-
-        async function moveSelectedBlock(axis, direction) {
-            if (!selectedCube) { showUserMessage("動かすブロックを選択してください。"); return; }
-            const originalPosition = selectedCube.position.clone();
-            const targetPosition = originalPosition.clone();
-            targetPosition[axis] += direction * cubeSize;
-            if (targetPosition.y < cubeSize / 2) targetPosition.y = cubeSize / 2;
-            let collision = false;
-            for (const cube of cubes) {
-                if (cube === selectedCube) continue; 
-                if (targetPosition.distanceTo(cube.position) < cubeSize * 0.99) { collision = true; break; }
-            }
-            if (collision) { showUserMessage("そこには動かせません（他のブロックと衝突します）。"); return; }
-            selectedCube.position.copy(targetPosition); 
-            try {
-                await setDoc(doc(cubesCollectionRef, selectedCube.userData.firestoreId), { x: targetPosition.x, y: targetPosition.y, z: targetPosition.z }, { merge: true });
-            } catch (error) { 
-                console.error("Error moving cube:", error);
-                selectedCube.position.copy(originalPosition); 
-                showUserMessage("ブロックの移動に失敗しました。");
-            }
-        }
-
-        function onWindowResize() {
-            const aspect = window.innerWidth / window.innerHeight;
-            const frustumSize = 15;
-            camera.left = frustumSize * aspect / -2;
-            camera.right = frustumSize * aspect / 2;
-            camera.top = frustumSize / 2;
-            camera.bottom = frustumSize / -2;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        function onPointerDown(event) {
-            const rect = renderer.domElement.getBoundingClientRect();
-            pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-            pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-            if (event.pointerType === 'touch') {
-                touchStartPointer.x = event.clientX;
-                touchStartPointer.y = event.clientY;
-            }
-        }
-
-        function onCanvasClick(event) { if (event.pointerType !== 'touch') onCanvasClickLogic(); }
-        async function onCanvasDblClick(event) { if (event.pointerType !== 'touch') onCanvasDblClickLogic(); }
         
-        function onCanvasTouchEnd(event) {
-            const currentTime = new Date().getTime();
-            const timeSinceLastTouch = currentTime - lastTouchTime;
-            const touch = event.changedTouches[0]; 
-            if (!touch) return; 
-            const rect = renderer.domElement.getBoundingClientRect();
-            const deltaX = Math.abs(touch.clientX - touchStartPointer.x);
-            const deltaY = Math.abs(touch.clientY - touchStartPointer.y);
-            if (deltaX < MAX_TAP_MOVE_THRESHOLD && deltaY < MAX_TAP_MOVE_THRESHOLD) {
-                event.preventDefault();
-                pointer.x = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
-                pointer.y = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
-                if (timeSinceLastTouch < DOUBLE_TAP_TIMEOUT) { onCanvasDblClickLogic(); lastTouchTime = 0; } 
-                else { onCanvasClickLogic(); lastTouchTime = currentTime; }
-            } else { lastTouchTime = 0; }
+        function setupRotationControls() {
+            document.getElementById('rotate-y').addEventListener('click', () => rotateGroup('y'));
+            document.getElementById('rotate-x').addEventListener('click', () => rotateGroup('x'));
+        }
+        
+        async function rotateGroup(axis) {
+            if (!selectedGroup || selectedGroup.length === 0) {
+                showUserMessage("回転するグループを選択してください。");
+                return;
+            }
+
+            const groupBox = new THREE.Box3();
+            selectedGroup.forEach(cube => groupBox.expandByPoint(cube.position));
+            const center = new THREE.Vector3();
+            groupBox.getCenter(center);
+
+            let pivotCube = selectedGroup[0];
+            let min_dist_sq = pivotCube.position.distanceToSquared(center);
+
+            for (let i = 1; i < selectedGroup.length; i++) {
+                const dist_sq = selectedGroup[i].position.distanceToSquared(center);
+                if (dist_sq < min_dist_sq) {
+                    min_dist_sq = dist_sq;
+                    pivotCube = selectedGroup[i];
+                }
+            }
+            const pivotPoint = pivotCube.position.clone();
+
+            const quaternion = new THREE.Quaternion();
+            const angle = Math.PI / 2;
+            const rotationAxis = axis === 'y' ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+            quaternion.setFromAxisAngle(rotationAxis, angle);
+
+            const newPositions = new Map();
+            for (const cube of selectedGroup) {
+                const relativePos = cube.position.clone().sub(pivotPoint);
+                relativePos.applyQuaternion(quaternion).round(); 
+                const newPos = pivotPoint.clone().add(relativePos);
+                newPositions.set(cube, newPos);
+            }
+            
+            let collision = false;
+            const allOtherCubes = cubes.filter(c => !selectedGroup.includes(c));
+
+            for (const newPos of newPositions.values()) {
+                for (const otherCube of allOtherCubes) {
+                    if (newPos.distanceTo(otherCube.position) < 0.1) {
+                        collision = true;
+                        break;
+                    }
+                }
+                if (collision) break;
+            }
+
+            if (collision) {
+                showUserMessage("回転できません（他のブロックと衝突します）。");
+                return;
+            }
+
+            const batch = writeBatch(db);
+            newPositions.forEach((pos, cube) => {
+                const docRef = doc(cubesCollectionRef, cube.userData.firestoreId);
+                batch.update(docRef, { x: pos.x, y: pos.y, z: pos.z });
+            });
+
+            try {
+                await batch.commit();
+                newPositions.forEach((pos, cube) => cube.position.copy(pos));
+            } catch (error) {
+                console.error("Rotation failed:", error);
+                showUserMessage("回転処理に失敗しました。");
+            }
         }
 
+        function handleGroupButtonClick() {
+            if (selectedGroup) {
+                ungroupSelectedGroup();
+            } else {
+                toggleGroupMode();
+            }
+        }
+
+        function updateGroupButtonState() {
+            const groupButton = document.getElementById('groupButton');
+            const rotationPanel = document.getElementById('rotation-controls-panel');
+
+            if (isGroupMode) {
+                groupButton.textContent = 'グループ確定';
+                groupButton.classList.add('active');
+                rotationPanel.style.display = 'none';
+            } else if (selectedGroup) {
+                groupButton.textContent = 'グループ解除';
+                groupButton.classList.add('active');
+                rotationPanel.style.display = 'block';
+            } else {
+                groupButton.textContent = 'グループ化';
+                groupButton.classList.remove('active');
+                rotationPanel.style.display = 'none';
+            }
+        }
+
+        function toggleGroupMode() {
+            isGroupMode = !isGroupMode;
+
+            if (!isGroupMode && groupSelection.size > 0) {
+                const newGroupMembers = Array.from(groupSelection);
+
+                const remainingGroups = cubeGroups
+                    .map(group => group.filter(cube => !groupSelection.has(cube)))
+                    .filter(group => group.length > 0);
+
+                remainingGroups.push(newGroupMembers);
+                
+                cubeGroups.length = 0;
+                cubeGroups.push(...remainingGroups);
+
+                showUserMessage(`新しいグループを作成しました (${newGroupMembers.length}個)`);
+                deselectAll();
+            } else if (isGroupMode) {
+                deselectAll();
+            } else {
+                isGroupMode = false;
+            }
+            
+            updateGroupButtonState();
+        }
+        
+        function ungroupSelectedGroup() {
+            if (!selectedGroup) return;
+            const index = cubeGroups.indexOf(selectedGroup);
+            if (index > -1) {
+                cubeGroups.splice(index, 1);
+                showUserMessage(`グループを解除しました。`);
+            }
+            deselectAll();
+        }
+
+        function deselectAll() {
+            cubes.forEach(c => c.material.color.setHex(0xffffff));
+            groupSelection.clear();
+            selectedCube = null;
+            selectedGroup = null;
+            updateGroupButtonState();
+        }
+
+        async function moveSelection(axis, direction) {
+            const targets = selectedGroup ? selectedGroup : (selectedCube ? [selectedCube] : []);
+            if (targets.length === 0) {
+                showUserMessage("動かすブロックを選択してください。"); return;
+            }
+
+            const batch = writeBatch(db);
+            let collision = false;
+            
+            const targetSet = new Set(targets);
+            const otherCubes = cubes.filter(c => !targetSet.has(c));
+
+            for (const target of targets) {
+                const targetPosition = target.position.clone();
+                targetPosition[axis] += direction * cubeSize;
+                
+                for (const otherCube of otherCubes) {
+                    if (targetPosition.distanceTo(otherCube.position) < 0.99) {
+                        collision = true; break;
+                    }
+                }
+                if (collision) break;
+            }
+
+            if (collision) {
+                showUserMessage("そこには動かせません。");
+                return;
+            }
+            
+            targets.forEach(target => {
+                const newPos = target.position.clone();
+                newPos[axis] += direction * cubeSize;
+                const docRef = doc(cubesCollectionRef, target.userData.firestoreId);
+                batch.update(docRef, { 
+                    x: newPos.x, 
+                    y: newPos.y, 
+                    z: newPos.z 
+                });
+            });
+
+            try {
+                await batch.commit();
+            } catch (error) {
+                showUserMessage("移動に失敗しました。");
+            }
+        }
+        
+        async function deleteSelection() {
+            const targets = selectedGroup ? [...selectedGroup] : (selectedCube ? [selectedCube] : []);
+            if (targets.length === 0) {
+                showUserMessage("削除するブロックを選択してください。");
+                return;
+            }
+
+            showConfirmation(`${targets.length}個のブロックを削除しますか？`, async () => {
+                const batch = writeBatch(db);
+                const deletedCubeIds = new Set();
+
+                targets.forEach(target => {
+                    if (target.userData.firestoreId) {
+                        const docRef = doc(cubesCollectionRef, target.userData.firestoreId);
+                        batch.delete(docRef);
+                        deletedCubeIds.add(target.userData.firestoreId);
+                    }
+                });
+
+                try {
+                    await batch.commit();
+                    const remainingGroups = cubeGroups
+                        .map(group => group.filter(cube => !deletedCubeIds.has(cube.userData.firestoreId)))
+                        .filter(group => group.length > 0);
+                    
+                    cubeGroups.length = 0;
+                    cubeGroups.push(...remainingGroups);
+
+                    deselectAll();
+                } catch (error) {
+                    console.error("削除に失敗しました:", error);
+                    showUserMessage("削除に失敗しました。");
+                }
+            });
+        }
+        
         function onCanvasClickLogic() {
             raycaster.setFromCamera(pointer, camera);
-            const intersects = raycaster.intersectObjects(cubes, false); 
+            const selectableCubes = cubes.filter(c => c.visible);
+            const intersects = raycaster.intersectObjects(selectableCubes, false); 
             const clickedCube = intersects.length > 0 ? intersects[0].object : null;
 
-            if (selectedCube) {
-                selectedCube.material.color.setHex(0xffffff);
+            if (isGroupMode) {
+                if (clickedCube) {
+                    const containingGroup = cubeGroups.find(group => group.includes(clickedCube));
+                    const targets = containingGroup ? containingGroup : [clickedCube];
+                    
+                    const isAdding = !groupSelection.has(clickedCube);
+
+                    targets.forEach(c => {
+                        if (isAdding) {
+                            groupSelection.add(c);
+                        } else {
+                            groupSelection.delete(c);
+                        }
+                    });
+
+                    cubes.forEach(c => {
+                        if(groupSelection.has(c)) {
+                            c.material.color.setHex(0xc0c0c0);
+                        } else {
+                            c.material.color.setHex(0xffffff);
+                        }
+                    });
+                }
+            } else {
+                deselectAll();
+                if (clickedCube) {
+                    const containingGroup = cubeGroups.find(group => group.includes(clickedCube));
+                    if (containingGroup) {
+                        selectedGroup = containingGroup;
+                        selectedGroup.forEach(c => c.material.color.setHex(0xe0e0e0));
+                    } else {
+                        selectedCube = clickedCube;
+                        selectedCube.material.color.setHex(0xe0e0e0);
+                    }
+                }
             }
-            selectedCube = clickedCube;
-            if (selectedCube) {
-                selectedCube.material.color.setHex(0xe0e0e0);
-            }
+            updateGroupButtonState();
         }
 
         async function onCanvasDblClickLogic() {
+             if (isGroupMode) return;
             raycaster.setFromCamera(pointer, camera);
-            const intersects = raycaster.intersectObjects([invisiblePlane, ...cubes], false); 
+            const visibleCubes = cubes.filter(c => c.visible);
+            const intersects = raycaster.intersectObjects([invisiblePlane, ...visibleCubes], false); 
             if (intersects.length === 0 || !intersects[0].face) return;
             const intersect = intersects[0];
             const newPosition = new THREE.Vector3();
@@ -567,10 +966,15 @@
             newPosition.x = Math.round(newPosition.x);
             newPosition.y = Math.round((newPosition.y - cubeSize/2) / cubeSize) * cubeSize + cubeSize/2;
             newPosition.z = Math.round(newPosition.z);
+            
             if (newPosition.y < cubeSize/2) newPosition.y = cubeSize/2;
+            
             let overlap = false;
-            for (const cube of cubes) {
-                if (newPosition.distanceTo(cube.position) < 0.99) { overlap = true; break; }
+            for (const cube of visibleCubes) {
+                if (newPosition.distanceTo(cube.position) < 0.99) { 
+                    overlap = true; 
+                    break; 
+                }
             }
             if (!overlap) {
                 try {
@@ -580,7 +984,7 @@
         }
         
         function createCubeMesh(position, docId) {
-            if (!docId || cubeDataMap.has(docId)) return;
+            if (!docId || cubeDataMap.has(docId)) return null;
             
             const material = new THREE.MeshBasicMaterial({
                 color: 0xffffff,
@@ -603,13 +1007,7 @@
             cubeDataMap.set(docId, {x: position.x, y: position.y, z: position.z});
             return cube;
         }
-
-        async function deleteSelectedCube() {
-            if (!selectedCube || !selectedCube.userData.firestoreId) { showUserMessage("削除するブロックを選択してください。"); return; }
-            try { await deleteDoc(doc(cubesCollectionRef, selectedCube.userData.firestoreId)); } 
-            catch (e) { showUserMessage("キューブの削除に失敗しました。"); }
-        }
-
+        
         function toggleViewpointFix() {
             orbitControls.enabled = !orbitControls.enabled;
             const button = document.getElementById('fixViewButton');
@@ -629,43 +1027,63 @@
             if (unsubscribeFromCubes) unsubscribeFromCubes(); 
             
             while(cubes.length > 0) {
-                const cubeToRemove = cubes.pop();
-                if (selectedCube === cubeToRemove) selectedCube = null;
-                scene.remove(cubeToRemove);
+                scene.remove(cubes.pop());
             }
             cubeDataMap.clear();
+            cubeGroups.length = 0;
+            deselectAll();
 
             unsubscribeFromCubes = onSnapshot(query(cubesCollectionRef), (snapshot) => {
-                snapshot.docChanges().forEach((change) => {
-                    const data = change.doc.data();
-                    const docId = change.doc.id;
-                    if (change.type === "added") {
-                        if(typeof data.x === 'number' && typeof data.y === 'number' && typeof data.z === 'number') {
-                            createCubeMesh(new THREE.Vector3(data.x,data.y,data.z), docId);
-                        }
-                    } else if (change.type === "modified") {
-                        const c = cubes.find(c => c.userData.firestoreId === docId);
-                        if (c) { 
-                            c.position.set(data.x,data.y,data.z);
-                        }
-                    } else if (change.type === "removed") {
-                        const i = cubes.findIndex(c => c.userData.firestoreId === docId);
-                        if (i > -1) { 
-                            const cubeToRemove = cubes[i];
-                            if (selectedCube === cubeToRemove) {
-                                selectedCube = null;
-                            }
-                            scene.remove(cubeToRemove); 
-                            cubes.splice(i, 1); 
-                        }
-                        cubeDataMap.delete(docId);
-                    }
-                });
+                const changes = snapshot.docChanges();
+                
+                changes.filter(c => c.type === "removed").forEach(change => handleDocChange(change));
+                changes.filter(c => c.type !== "removed").forEach(change => handleDocChange(change));
+
+                updateLayerState();
                 loadingIndicator.style.display = 'none';
             }, (error) => {
+                console.error("Firestore Snapshot Error:", error);
                 showUserMessage("データの同期に失敗しました。");
                 loadingIndicator.style.display = 'none';
             });
+        }
+
+        function handleDocChange(change) {
+            const data = change.doc.data();
+            const docId = change.doc.id;
+
+            if (change.type === "added") {
+                if(typeof data.x === 'number' && typeof data.y === 'number' && typeof data.z === 'number') {
+                    if (!cubeDataMap.has(docId)) {
+                        createCubeMesh(new THREE.Vector3(data.x,data.y,data.z), docId);
+                    }
+                }
+            } else if (change.type === "modified") {
+                const c = cubes.find(c => c.userData.firestoreId === docId);
+                if (c) { 
+                    c.position.set(data.x,data.y,data.z);
+                    cubeDataMap.set(docId, {x: data.x, y: data.y, z: data.z});
+                }
+            } else if (change.type === "removed") {
+                const i = cubes.findIndex(c => c.userData.firestoreId === docId);
+                if (i > -1) {
+                    const cubeToRemove = cubes[i];
+                    
+                    if (selectedCube === cubeToRemove) selectedCube = null;
+                    if (selectedGroup && selectedGroup.includes(cubeToRemove)) deselectAll();
+                    groupSelection.delete(cubeToRemove);
+                    
+                    scene.remove(cubeToRemove);
+                    cubes.splice(i, 1);
+                    cubeDataMap.delete(docId);
+
+                    const remainingGroups = cubeGroups
+                        .map(group => group.filter(cube => cube !== cubeToRemove))
+                        .filter(group => group.length > 0);
+                    cubeGroups.length = 0;
+                    cubeGroups.push(...remainingGroups);
+                }
+            }
         }
         
         async function startApp() {
@@ -701,10 +1119,14 @@
             });
 
             logoutButton.addEventListener('click', () => {
-                localStorage.removeItem('tsumiki_nickname');
-                location.reload();
+                showConfirmation("ログアウトしますか？", () => {
+                    localStorage.removeItem('tsumiki_nickname');
+                    location.reload();
+                });
             });
 
+            document.getElementById('saveNewButton').addEventListener('click', saveCurrentState);
+            
             const savedNickname = localStorage.getItem('tsumiki_nickname');
             if (savedNickname) {
                 currentNickname = savedNickname;
