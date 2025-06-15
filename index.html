@@ -1,0 +1,599 @@
+▲</button>
+        <button id="move-x-minus" class="move-block-button" data-axis="x" data-dir="-1" title="左へ移動">◀</button>
+        <button id="move-x-plus" class="move-block-button" data-axis="x" data-dir="1" title="右へ移動">▶</button>
+        <button id="move-z-minus" class="move-block-button" data-axis="z" data-dir="-1" title="手前へ移動">▼</button>
+        <button id="move-y-plus" class="move-block-button" data-axis="y" data-dir="1" title="上へ移動">上へ</button>
+        <button id="move-y-minus" class="move-block-button" data-axis="y" data-dir="-1" title="下へ移動">下へ</button>
+    </div>
+
+    <div id="customModal" class="custom-modal"><div class="custom-modal-content"><span id="customModalClose" class="custom-modal-close" title="閉じる">&times;</span><p id="customModalMessage"></p></div></div>
+    <div id="saveModal" class="custom-modal"><div class="custom-modal-content"><span id="saveModalClose" class="custom-modal-close" title="閉じる">&times;</span><h3>保存と読込</h3><div class="save-new-section"><input type="text" id="saveNameInput" placeholder="作品名 (例: はじめての城)"><button id="saveNewButton">現在の状態で新規保存</button></div><div id="savedStatesList"><p>保存した作品はありません。</p></div></div></div>
+    <div id="confirmModal" class="custom-modal"><div class="custom-modal-content"><p id="confirmModalMessage"></p><div class="confirm-actions"><button id="confirmYesButton" class="action-button">はい</button><button id="confirmNoButton" class="action-button orange">いいえ</button></div></div></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        // 変更点: 太い線を描画するためのモジュールをインポート
+        import { Line2 } from 'three/addons/lines/Line2.js';
+        import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+        import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, addDoc, getDocs, deleteDoc, onSnapshot, query, serverTimestamp, writeBatch, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebaseの設定は変更ありません
+        const firebaseConfig = {
+            apiKey: "AIzaSyBk-lnmwZnhPTj3yQuMfRBc3u5HFXko95k",
+            authDomain: "tsumiki3d.firebaseapp.com",
+            projectId: "tsumiki3d",
+            storageBucket: "tsumiki3d.firebasestorage.app",
+            messagingSenderId: "245181141529",
+            appId: "1:245181141529:web:a95fa288ab74de8ceb5088"
+        };
+        
+        const appId = firebaseConfig.appId;
+        
+        let app, auth, db, userId, currentNickname = null;
+        let cubesCollectionRef, savesCollectionRef;
+        let isAuthReady = false;
+        let unsubscribeFromCubes = null;
+
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const customModal = document.getElementById('customModal');
+        const customModalMessage = document.getElementById('customModalMessage');
+        const customModalClose = document.getElementById('customModalClose');
+        const saveModal = document.getElementById('saveModal');
+        const saveModalClose = document.getElementById('saveModalClose');
+        const confirmModal = document.getElementById('confirmModal');
+        const confirmModalMessage = document.getElementById('confirmModalMessage');
+        const confirmYesButton = document.getElementById('confirmYesButton');
+        const confirmNoButton = document.getElementById('confirmNoButton');
+        
+        const loginModal = document.getElementById('loginModal');
+        const nicknameInput = document.getElementById('nicknameInput');
+        const loginButton = document.getElementById('loginButton');
+        const anonymousButton = document.getElementById('anonymousButton');
+        const logoutButton = document.getElementById('logoutButton');
+        const userInfo = document.getElementById('userInfo');
+        
+        if (customModalClose) customModalClose.onclick = () => customModal.style.display = "none";
+        if (saveModalClose) saveModalClose.onclick = () => saveModal.style.display = "none";
+        window.onclick = event => { 
+            if (event.target == customModal) customModal.style.display = "none";
+            if (event.target == saveModal) saveModal.style.display = "none";
+            if (event.target == confirmModal) confirmModal.style.display = "none";
+        }
+
+        function showUserMessage(message) {
+            console.warn("UserMessage:", message);
+            if (customModal && customModalMessage) {
+                customModalMessage.textContent = message;
+                customModal.style.display = "flex";
+            }
+        }
+
+        function showConfirmation(message, onConfirm) {
+            confirmModalMessage.textContent = message;
+            confirmModal.style.display = 'flex';
+            confirmYesButton.onclick = () => {
+                confirmModal.style.display = 'none';
+                onConfirm();
+            };
+            confirmNoButton.onclick = () => {
+                confirmModal.style.display = 'none';
+            };
+        }
+        
+        // Firebaseの初期化と認証ロジックは変更ありません
+        async function initializeFirebase() {
+            try {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                
+                return new Promise((resolve, reject) => {
+                    onAuthStateChanged(auth, async (user) => {
+                        if (user) {
+                            userId = user.uid;
+                        } else {
+                            try {
+                                await signInAnonymously(auth);
+                                userId = auth.currentUser.uid;
+                            } catch (error) {
+                                reject(error);
+                                return;
+                            }
+                        }
+
+                        if (!userId) {
+                            reject(new Error("ユーザーIDの取得に失敗しました。"));
+                            return;
+                        }
+                        
+                        if (currentNickname) {
+                            const sanitizedNickname = currentNickname.replace(/[\.#$\[\]]/g, '_');
+                            const nicknamePath = `artifacts/${appId}/nicknames/${sanitizedNickname}`;
+                            cubesCollectionRef = collection(db, `${nicknamePath}/cubes`);
+                            savesCollectionRef = collection(db, `${nicknamePath}/saves`);
+                            userInfo.textContent = `ログイン中: ${currentNickname}`;
+                            userInfo.style.display = 'block';
+                            logoutButton.style.display = 'block';
+                        } else {
+                            const userPath = `artifacts/${appId}/users/${userId}`;
+                            cubesCollectionRef = collection(db, `${userPath}/cubes`);
+                            savesCollectionRef = collection(db, `${userPath}/saves`);
+                            userInfo.textContent = 'オフラインモード';
+                            userInfo.style.display = 'block';
+                            logoutButton.style.display = 'none';
+                        }
+
+                        isAuthReady = true; 
+                        resolve(); 
+                    });
+                });
+            } catch (error) {
+                console.error("Firebase initialization error:", error);
+                showUserMessage("アプリの起動に失敗しました: " + error.message); 
+                return Promise.reject(error);
+            }
+        }
+
+        let scene, camera, renderer, orbitControls;
+        let invisiblePlane;
+        const cubes = [];
+        const cubeDataMap = new Map();
+        let selectedCube = null;
+        // 変更点: 辺の表示/非表示フラグは不要に
+        // let areEdgesVisible = false; 
+        
+        // 変更点: カラーパレット関連の変数を削除
+
+        // 変更点: 太い線を書くためのマテリアルを定義
+        let fatLineMaterial;
+
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+        const cubeSize = 1;
+        const cubeGeometry = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+
+        let lastTouchTime = 0;
+        const DOUBLE_TAP_TIMEOUT = 300;
+        let touchStartPointer = { x: 0, y: 0 };
+        const MAX_TAP_MOVE_THRESHOLD = 20;
+
+        function initThreeJS() {
+            const container = document.getElementById('container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xffffff);
+
+            const aspect = window.innerWidth / window.innerHeight;
+            const frustumSize = 15;
+            camera = new THREE.OrthographicCamera(frustumSize * aspect / -2, frustumSize * aspect / 2, frustumSize / 2, frustumSize / -2, 0.1, 1000);
+            camera.position.set(10, 10, 10);
+            camera.lookAt(0, 0, 0);
+            camera.zoom = 1.2;
+            camera.updateProjectionMatrix();
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            container.appendChild(renderer.domElement);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 1.2)); 
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(5, 10, 7.5);
+            scene.add(directionalLight);
+
+            const planeGeometry = new THREE.PlaneGeometry(50, 50);
+            const planeMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00, visible: false, side: THREE.DoubleSide });
+            invisiblePlane = new THREE.Mesh(planeGeometry, planeMaterial);
+            invisiblePlane.rotation.x = -Math.PI / 2;
+            scene.add(invisiblePlane);
+
+            // 変更点: 太い線のマテリアルを初期化
+            fatLineMaterial = new LineMaterial({
+                color: 0x000000, // 線の色を黒に
+                linewidth: 3, // 線の太さ
+                alphaToCoverage: true,
+            });
+            fatLineMaterial.resolution.set(window.innerWidth, window.innerHeight);
+
+            orbitControls = new OrbitControls(camera, renderer.domElement);
+            orbitControls.enableDamping = true;
+            orbitControls.target.set(0, cubeSize / 2, 0);
+
+            window.addEventListener('resize', onWindowResize);
+            renderer.domElement.addEventListener('pointerdown', onPointerDown, false);
+            renderer.domElement.addEventListener('click', onCanvasClick, false);
+            renderer.domElement.addEventListener('dblclick', onCanvasDblClick, false);
+            renderer.domElement.addEventListener('touchend', onCanvasTouchEnd, false);
+            document.getElementById('saveLoadButton').addEventListener('click', openSavePanel);
+            document.getElementById('saveNewButton').addEventListener('click', saveCurrentState);
+            document.getElementById('deleteButton').addEventListener('click', deleteSelectedCube);
+            document.getElementById('fixViewButton').addEventListener('click', toggleViewpointFix);
+            // 変更点: 「辺を表示」ボタンのイベントリスナーを削除
+            
+            // 変更点: カラーパレットのセットアップを削除
+            setupBlockControls();
+            animate();
+        }
+        
+        // 保存・読込、Firebase関連の関数は変更ありません
+        async function openSavePanel() {
+            if (!isAuthReady) { showUserMessage("データベースの準備ができていません。"); return; }
+            if (!currentNickname) { showUserMessage("作品を保存・読込するにはニックネームでのログインが必要です。"); return; }
+            const savedStatesList = document.getElementById('savedStatesList');
+            saveModal.style.display = 'flex';
+            savedStatesList.innerHTML = '<p>読込中...</p>';
+            try {
+                const querySnapshot = await getDocs(query(savesCollectionRef));
+                if (querySnapshot.empty) {
+                    savedStatesList.innerHTML = '<p>保存した作品はありません。</p>';
+                    return;
+                }
+                savedStatesList.innerHTML = '';
+                const saves = [];
+                querySnapshot.forEach(doc => saves.push({ id: doc.id, ...doc.data() }));
+                saves.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+                saves.forEach(data => {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'saved-item';
+                    itemDiv.innerHTML = `
+                        <span class="saved-item-name">${data.name || '無題の作品'}</span>
+                        <span class="saved-item-date">${data.createdAt ? new Date(data.createdAt.toMillis()).toLocaleString() : '日付不明'}</span>
+                        <div class="saved-item-actions">
+                            <button class="load-button" data-id="${data.id}">読込</button>
+                            <button class="delete-save-button" data-id="${data.id}" data-name="${data.name || '無題の作品'}">削除</button>
+                        </div>`;
+                    savedStatesList.appendChild(itemDiv);
+                });
+                savedStatesList.querySelectorAll('.load-button').forEach(b => b.addEventListener('click', (e) => loadState(e.target.dataset.id)));
+                savedStatesList.querySelectorAll('.delete-save-button').forEach(b => b.addEventListener('click', (e) => deleteState(e.target.dataset.id, e.target.dataset.name)));
+            } catch (error) {
+                console.error("Error fetching saved states:", error);
+                showUserMessage("作品リストの読込に失敗しました。");
+            }
+        }
+        
+        async function saveCurrentState() {
+            if (!currentNickname) { showUserMessage("作品を保存するにはニックネームでのログインが必要です。"); return; }
+            const saveNameInput = document.getElementById('saveNameInput');
+            const saveName = saveNameInput.value.trim();
+            if (!saveName) { showUserMessage("作品名を入力してください。"); return; }
+            if (cubes.length === 0) { showUserMessage("保存するブロックがありません。"); return; }
+            loadingIndicator.style.display = 'block';
+            const cubesData = cubes.map(cube => ({
+                x: cube.position.x, y: cube.position.y, z: cube.position.z,
+                color: cube.material.color.getHex() // これは常に白になる
+            }));
+            try {
+                await addDoc(savesCollectionRef, { name: saveName, createdAt: serverTimestamp(), cubes: cubesData });
+                saveNameInput.value = '';
+                await openSavePanel();
+            } catch (error) { showUserMessage("作品の保存に失敗しました。"); } 
+            finally { loadingIndicator.style.display = 'none'; }
+        }
+        
+        async function loadState(saveId) {
+            if (!isAuthReady) { showUserMessage("データベースの準備ができていません。"); return; }
+            saveModal.style.display = 'none';
+            loadingIndicator.style.display = 'block';
+
+            if (unsubscribeFromCubes) {
+                unsubscribeFromCubes();
+                unsubscribeFromCubes = null;
+            }
+
+            try {
+                const currentCubesSnapshot = await getDocs(cubesCollectionRef);
+                const deleteBatch = writeBatch(db);
+                currentCubesSnapshot.forEach(d => deleteBatch.delete(d.ref));
+                await deleteBatch.commit();
+                
+                const saveDoc = await getDoc(doc(savesCollectionRef, saveId));
+                if (!saveDoc.exists()) throw new Error("保存データが見つかりません。");
+                const savedCubesData = saveDoc.data().cubes;
+                const saveName = saveDoc.data().name;
+
+                const addBatch = writeBatch(db);
+                savedCubesData.forEach(cubeData => {
+                    const newCubeRef = doc(cubesCollectionRef);
+                    // 以前のデータに色が保存されていても、新しいシステムでは白で表示される
+                    addBatch.set(newCubeRef, {
+                        x: cubeData.x,
+                        y: cubeData.y,
+                        z: cubeData.z,
+                        color: 0xffffff // 常に白で上書き
+                    });
+                });
+                await addBatch.commit();
+                
+                showUserMessage(`「${saveName}」を読み込みました。`);
+
+            } catch(error) {
+                console.error("Error loading state:", error);
+                showUserMessage("作品の読み込みに失敗しました: " + error.message);
+            } finally {
+                loadingIndicator.style.display = 'none';
+                loadCubesFromFirestore();
+            }
+        }
+
+        function deleteState(saveId, saveName) {
+            showConfirmation(`「${saveName}」を本当に削除しますか？この操作は元に戻せません。`, async () => {
+                loadingIndicator.style.display = 'block';
+                try {
+                    await deleteDoc(doc(savesCollectionRef, saveId));
+                    await openSavePanel();
+                } catch(error) { showUserMessage("保存データの削除に失敗しました。"); } 
+                finally { loadingIndicator.style.display = 'none'; }
+            });
+        }
+        
+        // カラーパレットの関数は削除
+
+        function setupBlockControls() {
+            document.getElementById('block-controls-panel').addEventListener('click', (e) => {
+                if(e.target.classList.contains('move-block-button')) {
+                    const axis = e.target.dataset.axis;
+                    const direction = parseInt(e.target.dataset.dir);
+                    moveSelectedBlock(axis, direction);
+                }
+            });
+        }
+
+        async function moveSelectedBlock(axis, direction) {
+            if (!selectedCube) { showUserMessage("動かすブロックを選択してください。"); return; }
+            const originalPosition = selectedCube.position.clone();
+            const targetPosition = originalPosition.clone();
+            targetPosition[axis] += direction * cubeSize;
+            if (targetPosition.y < cubeSize / 2) targetPosition.y = cubeSize / 2;
+            let collision = false;
+            for (const cube of cubes) {
+                if (cube === selectedCube) continue; 
+                if (targetPosition.distanceTo(cube.position) < cubeSize * 0.99) { collision = true; break; }
+            }
+            if (collision) { showUserMessage("そこには動かせません（他のブロックと衝突します）。"); return; }
+            selectedCube.position.copy(targetPosition); 
+            try {
+                await setDoc(doc(cubesCollectionRef, selectedCube.userData.firestoreId), { x: targetPosition.x, y: targetPosition.y, z: targetPosition.z }, { merge: true });
+            } catch (error) { 
+                console.error("Error moving cube:", error);
+                selectedCube.position.copy(originalPosition); 
+                showUserMessage("ブロックの移動に失敗しました。");
+            }
+        }
+
+        // 辺の表示切り替え関数は削除
+
+        function onWindowResize() {
+            const aspect = window.innerWidth / window.innerHeight;
+            const frustumSize = 15;
+            camera.left = frustumSize * aspect / -2;
+            camera.right = frustumSize * aspect / 2;
+            camera.top = frustumSize / 2;
+            camera.bottom = frustumSize / -2;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            // 変更点: リサイズ時に太線のマテリアルの解像度も更新
+            if (fatLineMaterial) {
+                fatLineMaterial.resolution.set(window.innerWidth, window.innerHeight);
+            }
+        }
+
+        function onPointerDown(event) {
+            const rect = renderer.domElement.getBoundingClientRect();
+            pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            if (event.pointerType === 'touch') {
+                touchStartPointer.x = event.clientX;
+                touchStartPointer.y = event.clientY;
+            }
+        }
+
+        function onCanvasClick(event) { if (event.pointerType !== 'touch') onCanvasClickLogic(); }
+        async function onCanvasDblClick(event) { if (event.pointerType !== 'touch') onCanvasDblClickLogic(); }
+        
+        function onCanvasTouchEnd(event) {
+            const currentTime = new Date().getTime();
+            const timeSinceLastTouch = currentTime - lastTouchTime;
+            const touch = event.changedTouches[0]; 
+            if (!touch) return; 
+            const rect = renderer.domElement.getBoundingClientRect();
+            const deltaX = Math.abs(touch.clientX - touchStartPointer.x);
+            const deltaY = Math.abs(touch.clientY - touchStartPointer.y);
+            if (deltaX < MAX_TAP_MOVE_THRESHOLD && deltaY < MAX_TAP_MOVE_THRESHOLD) {
+                event.preventDefault();
+                pointer.x = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
+                pointer.y = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
+                if (timeSinceLastTouch < DOUBLE_TAP_TIMEOUT) { onCanvasDblClickLogic(); lastTouchTime = 0; } 
+                else { onCanvasClickLogic(); lastTouchTime = currentTime; }
+            } else { lastTouchTime = 0; }
+        }
+
+        function onCanvasClickLogic() {
+            raycaster.setFromCamera(pointer, camera);
+            const intersects = raycaster.intersectObjects(cubes, false); 
+            const clickedCube = intersects.length > 0 ? intersects[0].object : null;
+            if (selectedCube) selectedCube.material.emissive.setHex(0x000000);
+            selectedCube = clickedCube;
+            if (selectedCube) {
+                // 変更点: 選択時のハイライト色を固定のグレーに
+                selectedCube.material.emissive.setHex(0xcccccc);
+            }
+        }
+
+        async function onCanvasDblClickLogic() {
+            raycaster.setFromCamera(pointer, camera);
+            const intersects = raycaster.intersectObjects([invisiblePlane, ...cubes], false); 
+            if (intersects.length === 0 || !intersects[0].face) return;
+            const intersect = intersects[0];
+            const newPosition = new THREE.Vector3();
+            if (intersect.object === invisiblePlane) { 
+                newPosition.set( Math.round(intersect.point.x), cubeSize / 2, Math.round(intersect.point.z) );
+            } else { 
+                newPosition.copy(intersect.object.position).addScaledVector(intersect.face.normal, cubeSize);
+            }
+            newPosition.x = Math.round(newPosition.x);
+            newPosition.y = Math.round((newPosition.y - cubeSize/2) / cubeSize) * cubeSize + cubeSize/2;
+            newPosition.z = Math.round(newPosition.z);
+            if (newPosition.y < cubeSize/2) newPosition.y = cubeSize/2;
+            let overlap = false;
+            for (const cube of cubes) {
+                if (newPosition.distanceTo(cube.position) < 0.99) { overlap = true; break; }
+            }
+            if (!overlap) {
+                try {
+                    // 変更点: ブロックの色を白（0xffffff）で固定してDBに保存
+                    await addDoc(cubesCollectionRef, { x: newPosition.x, y: newPosition.y, z: newPosition.z, color: 0xffffff });
+                } catch (e) { showUserMessage("ブロックの追加に失敗しました。"); }
+            } else { showUserMessage("ここにはブロックを置けません。"); }
+        }
+        
+        function createCubeMesh(position, hexColor, docId) {
+            if (!docId || cubeDataMap.has(docId)) return;
+            const material = new THREE.MeshStandardMaterial({
+                color: 0xffffff, // 変更点: 色を白で固定
+                roughness: 0.9,
+                metalness: 0.1
+            });
+            const cube = new THREE.Mesh(cubeGeometry, material);
+            cube.position.copy(position);
+            cube.userData.firestoreId = docId;
+
+            // 変更点: EdgesGeometryから太線を生成する処理に変更
+            const edgesGeom = new THREE.EdgesGeometry(cube.geometry);
+            const lineGeom = new LineGeometry();
+            lineGeom.setPositions(edgesGeom.attributes.position.array);
+            const edges = new Line2(lineGeom, fatLineMaterial);
+            
+            cube.add(edges); 
+            cube.userData.edges = edges; 
+            cubes.push(cube);
+            scene.add(cube);
+            cubeDataMap.set(docId, {x: position.x, y: position.y, z: position.z, color: 0xffffff});
+            return cube;
+        }
+
+        async function deleteSelectedCube() {
+            if (!selectedCube || !selectedCube.userData.firestoreId) { showUserMessage("削除するブロックを選択してください。"); return; }
+            try { await deleteDoc(doc(cubesCollectionRef, selectedCube.userData.firestoreId)); } 
+            catch (e) { showUserMessage("キューブの削除に失敗しました。"); }
+        }
+
+        // 色変更の関数は不要になったので削除
+
+        function toggleViewpointFix() {
+            orbitControls.enabled = !orbitControls.enabled;
+            const button = document.getElementById('fixViewButton');
+            button.textContent = orbitControls.enabled ? '視点固定' : '固定解除';
+            button.classList.toggle('orange', !orbitControls.enabled); 
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (orbitControls.enabled) orbitControls.update(); 
+            renderer.render(scene, camera); 
+        }
+
+        async function loadCubesFromFirestore() {
+            if (!isAuthReady) return;
+            loadingIndicator.style.display = 'block';
+            if (unsubscribeFromCubes) unsubscribeFromCubes(); 
+            
+            while(cubes.length > 0) {
+                const cubeToRemove = cubes.pop();
+                if (selectedCube === cubeToRemove) selectedCube = null;
+                scene.remove(cubeToRemove);
+            }
+            cubeDataMap.clear();
+
+            unsubscribeFromCubes = onSnapshot(query(cubesCollectionRef), (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    const data = change.doc.data();
+                    const docId = change.doc.id;
+                    if (change.type === "added") {
+                        if(typeof data.x === 'number' && typeof data.y === 'number' && typeof data.z === 'number') {
+                            // 読み込む際も色は白で固定
+                            createCubeMesh(new THREE.Vector3(data.x,data.y,data.z), 0xffffff, docId);
+                        }
+                    } else if (change.type === "modified") {
+                        const c = cubes.find(c => c.userData.firestoreId === docId);
+                        if (c) { 
+                            c.position.set(data.x,data.y,data.z); 
+                            c.material.color.setHex(0xffffff); // 色も強制的に白に
+                        }
+                    } else if (change.type === "removed") {
+                        const i = cubes.findIndex(c => c.userData.firestoreId === docId);
+                        if (i > -1) { 
+                            const cubeToRemove = cubes[i];
+                            if (selectedCube === cubeToRemove) {
+                                selectedCube.material.emissive.setHex(0x000000);
+                                selectedCube = null;
+                            }
+                            scene.remove(cubeToRemove); 
+                            cubes.splice(i, 1); 
+                        }
+                        cubeDataMap.delete(docId);
+                    }
+                });
+                loadingIndicator.style.display = 'none';
+            }, (error) => {
+                showUserMessage("データの同期に失敗しました。");
+                loadingIndicator.style.display = 'none';
+            });
+        }
+        
+        // アプリケーションの起動ロジックは変更ありません
+        async function startApp() {
+            loadingIndicator.style.display = 'block';
+            try {
+                await initializeFirebase(); 
+                initThreeJS(); 
+                await loadCubesFromFirestore(); 
+            } catch (error) {
+                showUserMessage("アプリの起動処理でエラーが発生しました: " + error.message);
+                loadingIndicator.style.display = 'none';
+            }
+        }
+        
+        function main() {
+            loginButton.addEventListener('click', () => {
+                const nickname = nicknameInput.value.trim();
+                if (nickname) {
+                    currentNickname = nickname;
+                    localStorage.setItem('tsumiki_nickname', nickname);
+                    loginModal.style.display = 'none';
+                    startApp();
+                } else {
+                    showUserMessage("ニックネームを入力してください。");
+                }
+            });
+
+            anonymousButton.addEventListener('click', () => {
+                currentNickname = null;
+                localStorage.removeItem('tsumiki_nickname');
+                loginModal.style.display = 'none';
+                startApp();
+            });
+
+            logoutButton.addEventListener('click', () => {
+                localStorage.removeItem('tsumiki_nickname');
+                location.reload();
+            });
+
+            const savedNickname = localStorage.getItem('tsumiki_nickname');
+            if (savedNickname) {
+                currentNickname = savedNickname;
+                loginModal.style.display = 'none';
+                startApp();
+            } else {
+                loginModal.style.display = 'flex';
+            }
+        }
+        
+        main();
+    </script>
+</body>
+</html>
+```
