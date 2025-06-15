@@ -1,7 +1,176 @@
-▲</button>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3Dブロック積み木アプリ (白黒・正射影)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+            }
+        }
+    </script>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            font-family: 'Inter', sans-serif; 
+            background-color: #ffffff;
+            touch-action: manipulation;
+        }
+        #container { 
+            width: 100vw; 
+            height: 100vh; 
+            display: block; 
+        }
+        .controls { 
+            position: absolute; 
+            bottom: 30px;
+            left: 50%; 
+            transform: translateX(-50%); 
+            display: flex; 
+            flex-wrap: nowrap;
+            justify-content: center; 
+            gap: 8px;
+            padding: 10px; 
+            background-color: rgba(255,255,255,0.85); 
+            border-radius: 8px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border: 1px solid rgba(0,0,0,0.08);
+            z-index: 10;
+        }
+        .action-button { 
+            padding: 8px 12px;
+            background-color: #f4f4f5;
+            color: #18181b;
+            border: 1px solid #d4d4d8;
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-size: 16px; 
+            transition: background-color 0.3s; 
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            white-space: nowrap;
+        }
+        .action-button:hover { background-color: #e4e4e7; }
+        .action-button.orange { 
+            background-color: #f59e0b;
+            color: white;
+            border-color: #d97706;
+        }
+        .action-button.orange:hover { background-color: #d97706; }
+        
+        #block-controls-panel { 
+            position: absolute; 
+            bottom: 110px;
+            right: 20px; 
+            background-color: rgba(255,255,255,0.85); 
+            border-radius: 8px; 
+            padding:10px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border: 1px solid rgba(0,0,0,0.08);
+            display: grid; 
+            grid-template-areas: ". up ." "left . right" ". down ." "y-up y-up y-up" "y-down y-down y-down"; 
+            grid-template-columns: repeat(3, 1fr); 
+            gap: 5px; 
+            width: 160px; 
+            z-index: 10; 
+        }
+
+        .move-block-button { background-color: #d4d4d8; color:#3f3f46; border:none; border-radius:5px; width:100%; height:35px; display:flex; justify-content:center; align-items:center; cursor:pointer; font-size: 18px; transition: background-color 0.3s; }
+        .move-block-button:hover { background-color: #a1a1aa; }
+        #move-z-plus { grid-area: up; }
+        #move-x-minus { grid-area: left; }
+        #move-x-plus { grid-area: right; }
+        #move-z-minus { grid-area: down; }
+        #move-y-plus { grid-area: y-up; margin-top: 5px;}
+        #move-y-minus { grid-area: y-down; margin-top: 5px;}
+
+        #instructionText { position: absolute; top: 20px; right: 20px; padding: 8px 12px; background-color: rgba(0,0,0,0.05); color: #333; border: 1px solid rgba(0,0,0,0.1); border-radius: 5px; font-size: 13px; z-index: 10; text-align: right; }
+        #loading-indicator { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 20px 30px; background-color: rgba(0,0,0,0.75); color: white; border-radius: 8px; font-size: 18px; z-index: 2500; display: none; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .custom-modal { display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); align-items: center; justify-content: center; }
+        .custom-modal-content { background-color: #fefefe; margin: auto; padding: 25px; border: 1px solid #bbb; width: 90%; max-width: 500px; border-radius: 10px; text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.25); position: relative; }
+        .custom-modal-close { color: #888; position: absolute; top: 10px; right: 15px; font-size: 28px; font-weight: bold; cursor: pointer; line-height: 1; }
+        .custom-modal-close:hover, .custom-modal-close:focus { color: #333; text-decoration: none; }
+        #customModalMessage { font-size: 16px; color: #333; margin-top: 10px; margin-bottom: 15px; }
+
+        #loginModal { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 3000; }
+        #loginBox { background-color: white; padding: 30px 40px; border-radius: 10px; text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.3); }
+        #loginBox h3 { margin-top: 0; color: #333; }
+        #nicknameInput { width: 100%; padding: 10px; margin: 15px 0; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; }
+        #loginButton, #anonymousButton { width: 100%; padding: 10px; border-radius: 5px; border: none; cursor: pointer; font-size: 16px; transition: background-color 0.3s; }
+        #loginButton { background-color: #3b82f6; color: white; margin-bottom: 10px; }
+        #loginButton:hover { background-color: #2563eb; }
+        #anonymousButton { background-color: #6b7280; color: white; }
+        #anonymousButton:hover { background-color: #4b5563; }
+        #logoutButton { display: none; }
+        
+        #userInfo {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.05);
+            border: 1px solid rgba(0,0,0,0.1);
+            padding: 8px 12px;
+            border-radius: 5px;
+            font-size: 13px;
+            color: #333;
+            display: none;
+            text-align: right;
+            z-index: 10;
+        }
+
+        #saveModal .save-new-section { margin: 20px 0; display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap;}
+        #saveModal input[type="text"] { padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; flex-grow: 1; min-width: 180px; }
+        #saveModal button { padding: 8px 15px; border-radius: 4px; border: none; cursor: pointer; font-size: 16px; transition: background-color 0.3s; }
+        #saveNewButton { background-color: #10b981; color: white; }
+        #saveNewButton:hover { background-color: #059669; }
+        #savedStatesList { margin-top: 20px; max-height: 40vh; overflow-y: auto; text-align: left; border-top: 1px solid #eee; padding-top: 10px; }
+        .saved-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid #eee; gap: 10px; }
+        .saved-item-name { font-weight: bold; flex-grow: 1; }
+        .saved-item-date { font-size: 12px; color: #666; }
+        .saved-item-actions button { font-size: 14px; margin-left: 5px; }
+        .load-button { background-color: #3b82f6; color: white; }
+        .load-button:hover { background-color: #2563eb; }
+        .delete-save-button { background-color: #f97316; color: white; }
+        .delete-save-button:hover { background-color: #ea580c; }
+
+        #confirmModal .custom-modal-content { max-width: 350px; }
+        .confirm-actions { margin-top: 20px; display: flex; justify-content: center; gap: 15px; }
+    </style>
+</head>
+<body>
+    <div id="loginModal">
+        <div id="loginBox">
+            <h3>ニックネームでログイン</h3>
+            <p style="font-size:14px; color:#555;">他のデバイスと作品を共有できます</p>
+            <input type="text" id="nicknameInput" placeholder="ニックネームを入力">
+            <button id="loginButton">この名前で始める</button>
+            <button id="anonymousButton">ログインせずに続ける</button>
+        </div>
+    </div>
+
+    <div id="container"></div>
+    <div id="loading-indicator">処理中...</div>
+
+    <div id="instructionText">タップで選択<br>ダブルタップで作成</div>
+    <div id="userInfo"></div>
+    
+    <div class="controls">
+        <button id="saveLoadButton" class="action-button">保存/読込</button>
+        <button id="deleteButton" class="action-button">削除</button>
+        <button id="fixViewButton" class="action-button">視点固定</button>
+        <button id="logoutButton" class="action-button">ログアウト</button>
+    </div>
+
+    <div id="block-controls-panel">
+        <!-- 変更点: 上下矢印の挙動を修正 -->
+        <button id="move-z-plus" class="move-block-button" data-axis="z" data-dir="-1" title="手前へ移動">▲</button>
         <button id="move-x-minus" class="move-block-button" data-axis="x" data-dir="-1" title="左へ移動">◀</button>
         <button id="move-x-plus" class="move-block-button" data-axis="x" data-dir="1" title="右へ移動">▶</button>
-        <button id="move-z-minus" class="move-block-button" data-axis="z" data-dir="-1" title="手前へ移動">▼</button>
+        <button id="move-z-minus" class="move-block-button" data-axis="z" data-dir="1" title="奥へ移動">▼</button>
         <button id="move-y-plus" class="move-block-button" data-axis="y" data-dir="1" title="上へ移動">上へ</button>
         <button id="move-y-minus" class="move-block-button" data-axis="y" data-dir="-1" title="下へ移動">下へ</button>
     </div>
@@ -13,15 +182,10 @@
     <script type="module">
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        // 変更点: 太い線を描画するためのモジュールをインポート
-        import { Line2 } from 'three/addons/lines/Line2.js';
-        import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
-        import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection, addDoc, getDocs, deleteDoc, onSnapshot, query, serverTimestamp, writeBatch, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebaseの設定は変更ありません
         const firebaseConfig = {
             apiKey: "AIzaSyBk-lnmwZnhPTj3yQuMfRBc3u5HFXko95k",
             authDomain: "tsumiki3d.firebaseapp.com",
@@ -84,7 +248,6 @@
             };
         }
         
-        // Firebaseの初期化と認証ロジックは変更ありません
         async function initializeFirebase() {
             try {
                 app = initializeApp(firebaseConfig);
@@ -143,14 +306,7 @@
         const cubes = [];
         const cubeDataMap = new Map();
         let selectedCube = null;
-        // 変更点: 辺の表示/非表示フラグは不要に
-        // let areEdgesVisible = false; 
         
-        // 変更点: カラーパレット関連の変数を削除
-
-        // 変更点: 太い線を書くためのマテリアルを定義
-        let fatLineMaterial;
-
         const raycaster = new THREE.Raycaster();
         const pointer = new THREE.Vector2();
         const cubeSize = 1;
@@ -177,25 +333,12 @@
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             container.appendChild(renderer.domElement);
-
-            scene.add(new THREE.AmbientLight(0xffffff, 1.2)); 
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            directionalLight.position.set(5, 10, 7.5);
-            scene.add(directionalLight);
-
+            
             const planeGeometry = new THREE.PlaneGeometry(50, 50);
             const planeMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00, visible: false, side: THREE.DoubleSide });
             invisiblePlane = new THREE.Mesh(planeGeometry, planeMaterial);
             invisiblePlane.rotation.x = -Math.PI / 2;
             scene.add(invisiblePlane);
-
-            // 変更点: 太い線のマテリアルを初期化
-            fatLineMaterial = new LineMaterial({
-                color: 0x000000, // 線の色を黒に
-                linewidth: 3, // 線の太さ
-                alphaToCoverage: true,
-            });
-            fatLineMaterial.resolution.set(window.innerWidth, window.innerHeight);
 
             orbitControls = new OrbitControls(camera, renderer.domElement);
             orbitControls.enableDamping = true;
@@ -210,14 +353,11 @@
             document.getElementById('saveNewButton').addEventListener('click', saveCurrentState);
             document.getElementById('deleteButton').addEventListener('click', deleteSelectedCube);
             document.getElementById('fixViewButton').addEventListener('click', toggleViewpointFix);
-            // 変更点: 「辺を表示」ボタンのイベントリスナーを削除
             
-            // 変更点: カラーパレットのセットアップを削除
             setupBlockControls();
             animate();
         }
         
-        // 保存・読込、Firebase関連の関数は変更ありません
         async function openSavePanel() {
             if (!isAuthReady) { showUserMessage("データベースの準備ができていません。"); return; }
             if (!currentNickname) { showUserMessage("作品を保存・読込するにはニックネームでのログインが必要です。"); return; }
@@ -262,8 +402,7 @@
             if (cubes.length === 0) { showUserMessage("保存するブロックがありません。"); return; }
             loadingIndicator.style.display = 'block';
             const cubesData = cubes.map(cube => ({
-                x: cube.position.x, y: cube.position.y, z: cube.position.z,
-                color: cube.material.color.getHex() // これは常に白になる
+                x: cube.position.x, y: cube.position.y, z: cube.position.z
             }));
             try {
                 await addDoc(savesCollectionRef, { name: saveName, createdAt: serverTimestamp(), cubes: cubesData });
@@ -297,12 +436,10 @@
                 const addBatch = writeBatch(db);
                 savedCubesData.forEach(cubeData => {
                     const newCubeRef = doc(cubesCollectionRef);
-                    // 以前のデータに色が保存されていても、新しいシステムでは白で表示される
                     addBatch.set(newCubeRef, {
                         x: cubeData.x,
                         y: cubeData.y,
-                        z: cubeData.z,
-                        color: 0xffffff // 常に白で上書き
+                        z: cubeData.z
                     });
                 });
                 await addBatch.commit();
@@ -329,8 +466,6 @@
             });
         }
         
-        // カラーパレットの関数は削除
-
         function setupBlockControls() {
             document.getElementById('block-controls-panel').addEventListener('click', (e) => {
                 if(e.target.classList.contains('move-block-button')) {
@@ -363,8 +498,6 @@
             }
         }
 
-        // 辺の表示切り替え関数は削除
-
         function onWindowResize() {
             const aspect = window.innerWidth / window.innerHeight;
             const frustumSize = 15;
@@ -374,11 +507,6 @@
             camera.bottom = frustumSize / -2;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-
-            // 変更点: リサイズ時に太線のマテリアルの解像度も更新
-            if (fatLineMaterial) {
-                fatLineMaterial.resolution.set(window.innerWidth, window.innerHeight);
-            }
         }
 
         function onPointerDown(event) {
@@ -415,11 +543,13 @@
             raycaster.setFromCamera(pointer, camera);
             const intersects = raycaster.intersectObjects(cubes, false); 
             const clickedCube = intersects.length > 0 ? intersects[0].object : null;
-            if (selectedCube) selectedCube.material.emissive.setHex(0x000000);
+
+            if (selectedCube) {
+                selectedCube.material.color.setHex(0xffffff);
+            }
             selectedCube = clickedCube;
             if (selectedCube) {
-                // 変更点: 選択時のハイライト色を固定のグレーに
-                selectedCube.material.emissive.setHex(0xcccccc);
+                selectedCube.material.color.setHex(0xe0e0e0);
             }
         }
 
@@ -444,34 +574,33 @@
             }
             if (!overlap) {
                 try {
-                    // 変更点: ブロックの色を白（0xffffff）で固定してDBに保存
-                    await addDoc(cubesCollectionRef, { x: newPosition.x, y: newPosition.y, z: newPosition.z, color: 0xffffff });
+                    await addDoc(cubesCollectionRef, { x: newPosition.x, y: newPosition.y, z: newPosition.z });
                 } catch (e) { showUserMessage("ブロックの追加に失敗しました。"); }
             } else { showUserMessage("ここにはブロックを置けません。"); }
         }
         
-        function createCubeMesh(position, hexColor, docId) {
+        function createCubeMesh(position, docId) {
             if (!docId || cubeDataMap.has(docId)) return;
-            const material = new THREE.MeshStandardMaterial({
-                color: 0xffffff, // 変更点: 色を白で固定
-                roughness: 0.9,
-                metalness: 0.1
+            
+            const material = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                polygonOffset: true,
+                polygonOffsetFactor: 1,
+                polygonOffsetUnits: 1
             });
             const cube = new THREE.Mesh(cubeGeometry, material);
             cube.position.copy(position);
             cube.userData.firestoreId = docId;
 
-            // 変更点: EdgesGeometryから太線を生成する処理に変更
             const edgesGeom = new THREE.EdgesGeometry(cube.geometry);
-            const lineGeom = new LineGeometry();
-            lineGeom.setPositions(edgesGeom.attributes.position.array);
-            const edges = new Line2(lineGeom, fatLineMaterial);
+            const lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 3 });
+            const edges = new THREE.LineSegments(edgesGeom, lineMaterial);
             
             cube.add(edges); 
             cube.userData.edges = edges; 
             cubes.push(cube);
             scene.add(cube);
-            cubeDataMap.set(docId, {x: position.x, y: position.y, z: position.z, color: 0xffffff});
+            cubeDataMap.set(docId, {x: position.x, y: position.y, z: position.z});
             return cube;
         }
 
@@ -480,8 +609,6 @@
             try { await deleteDoc(doc(cubesCollectionRef, selectedCube.userData.firestoreId)); } 
             catch (e) { showUserMessage("キューブの削除に失敗しました。"); }
         }
-
-        // 色変更の関数は不要になったので削除
 
         function toggleViewpointFix() {
             orbitControls.enabled = !orbitControls.enabled;
@@ -514,21 +641,18 @@
                     const docId = change.doc.id;
                     if (change.type === "added") {
                         if(typeof data.x === 'number' && typeof data.y === 'number' && typeof data.z === 'number') {
-                            // 読み込む際も色は白で固定
-                            createCubeMesh(new THREE.Vector3(data.x,data.y,data.z), 0xffffff, docId);
+                            createCubeMesh(new THREE.Vector3(data.x,data.y,data.z), docId);
                         }
                     } else if (change.type === "modified") {
                         const c = cubes.find(c => c.userData.firestoreId === docId);
                         if (c) { 
-                            c.position.set(data.x,data.y,data.z); 
-                            c.material.color.setHex(0xffffff); // 色も強制的に白に
+                            c.position.set(data.x,data.y,data.z);
                         }
                     } else if (change.type === "removed") {
                         const i = cubes.findIndex(c => c.userData.firestoreId === docId);
                         if (i > -1) { 
                             const cubeToRemove = cubes[i];
                             if (selectedCube === cubeToRemove) {
-                                selectedCube.material.emissive.setHex(0x000000);
                                 selectedCube = null;
                             }
                             scene.remove(cubeToRemove); 
@@ -544,7 +668,6 @@
             });
         }
         
-        // アプリケーションの起動ロジックは変更ありません
         async function startApp() {
             loadingIndicator.style.display = 'block';
             try {
@@ -596,4 +719,3 @@
     </script>
 </body>
 </html>
-```
