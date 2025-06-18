@@ -449,20 +449,14 @@
             } else { lastTouchTime = 0; }
         }
         
-        // ★★★ 追加 ★★★
-        // キーが押されたときの処理を行う関数
         function handleKeyDown(event) {
-            // DeleteキーまたはBackspaceキーが押された場合
             if (event.key === 'Delete' || event.key === 'Backspace') {
-                // テキスト入力中などは削除処理を行わないようにする
                 const activeElement = document.activeElement;
                 if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
                     return;
                 }
-                
-                // 選択されているものがあれば削除関数を呼び出す
                 if (selectedCube || selectedGroup) {
-                    event.preventDefault(); // ブラウザのデフォルト動作（前のページに戻るなど）を防ぐ
+                    event.preventDefault();
                     deleteSelection();
                 }
             }
@@ -507,9 +501,6 @@
             renderer.domElement.addEventListener('click', onCanvasClick, false);
             renderer.domElement.addEventListener('dblclick', onCanvasDblClick, false);
             renderer.domElement.addEventListener('touchend', onCanvasTouchEnd, false);
-
-            // ★★★ 追加 ★★★
-            // キーボード操作用のイベントリスナーを追加
             document.addEventListener('keydown', handleKeyDown);
 
             document.getElementById('groupButton').addEventListener('click', handleGroupButtonClick);
@@ -644,53 +635,79 @@
             }
         }
         
+        // ★★★ 変更 ★★★
         async function saveCurrentState() {
             if (!currentNickname) { showUserMessage("作品を保存するにはニックネームでのログインが必要です。"); return; }
             const saveNameInput = document.getElementById('saveNameInput');
             const saveName = saveNameInput.value.trim();
             if (!saveName) { showUserMessage("作品名を入力してください。"); return; }
             if (cubes.length === 0) { showUserMessage("保存するブロックがありません。"); return; }
+            
             loadingIndicator.style.display = 'block';
+            
+            // 現在のブロックの位置とグループIDをデータとして収集
             const cubesData = cubes.map(cube => ({
-                x: cube.position.x, y: cube.position.y, z: cube.position.z
+                x: cube.position.x, 
+                y: cube.position.y, 
+                z: cube.position.z,
+                groupId: cube.userData.groupId || null // userDataからgroupIdを取得
             }));
+
             try {
-                await addDoc(savesCollectionRef, { name: saveName, createdAt: serverTimestamp(), cubes: cubesData });
+                // cubesDataを 'saves' コレクションに保存
+                await addDoc(savesCollectionRef, { 
+                    name: saveName, 
+                    createdAt: serverTimestamp(), 
+                    cubes: cubesData // グループ情報を含んだブロックデータを保存
+                });
                 saveNameInput.value = '';
-                await openSavePanel();
-            } catch (error) { showUserMessage("作品の保存に失敗しました。"); } 
-            finally { loadingIndicator.style.display = 'none'; }
+                await openSavePanel(); // 保存パネルを更新
+            } catch (error) { 
+                console.error("Save failed:", error);
+                showUserMessage("作品の保存に失敗しました。"); 
+            } finally { 
+                loadingIndicator.style.display = 'none'; 
+            }
         }
         
+        // ★★★ 変更 ★★★
         async function loadState(saveId) {
             if (!isAuthReady) { showUserMessage("データベースの準備ができていません。"); return; }
             saveModal.style.display = 'none';
             loadingIndicator.style.display = 'block';
 
+            // 現在のリアルタイムリスナーを停止
             if (unsubscribeFromCubes) {
                 unsubscribeFromCubes();
                 unsubscribeFromCubes = null;
             }
 
             try {
+                // 現在のブロックをすべて削除
                 const currentCubesSnapshot = await getDocs(cubesCollectionRef);
                 const deleteBatch = writeBatch(db);
                 currentCubesSnapshot.forEach(d => deleteBatch.delete(d.ref));
                 await deleteBatch.commit();
                 
+                // 保存されたデータを取得
                 const saveDoc = await getDoc(doc(savesCollectionRef, saveId));
                 if (!saveDoc.exists()) throw new Error("保存データが見つかりません。");
-                const savedCubesData = saveDoc.data().cubes;
-                const saveName = saveDoc.data().name;
+                
+                const savedData = saveDoc.data();
+                const savedCubesData = savedData.cubes || []; // 保存データにcubesがあるか確認
+                const saveName = savedData.name;
 
+                // 保存されたデータで新しいブロックを作成
                 const addBatch = writeBatch(db);
                 savedCubesData.forEach(cubeData => {
                     const newCubeRef = doc(cubesCollectionRef);
-                    addBatch.set(newCubeRef, {
+                    const newDocData = {
                         x: cubeData.x,
                         y: cubeData.y,
-                        z: cubeData.z
-                    });
+                        z: cubeData.z,
+                        groupId: cubeData.groupId || null // groupIdも一緒に書き込む
+                    };
+                    addBatch.set(newCubeRef, newDocData);
                 });
                 await addBatch.commit();
                 
@@ -701,6 +718,7 @@
                 showUserMessage("作品の読み込みに失敗しました: " + error.message);
             } finally {
                 loadingIndicator.style.display = 'none';
+                // リアルタイムリスナーを再開して、新しい状態を反映
                 loadCubesFromFirestore();
             }
         }
@@ -794,7 +812,6 @@
 
             try {
                 await batch.commit();
-                newPositions.forEach((pos, cube) => cube.position.copy(pos));
             } catch (error) {
                 console.error("Rotation failed:", error);
                 showUserMessage("回転処理に失敗しました。");
@@ -829,40 +846,59 @@
             }
         }
 
-        function toggleGroupMode() {
+        // ★★★ 変更 ★★★
+        async function toggleGroupMode() {
             isGroupMode = !isGroupMode;
 
-            if (!isGroupMode && groupSelection.size > 0) {
-                const newGroupMembers = Array.from(groupSelection);
-
-                const remainingGroups = cubeGroups
-                    .map(group => group.filter(cube => !groupSelection.has(cube)))
-                    .filter(group => group.length > 0);
-
-                remainingGroups.push(newGroupMembers);
+            // グループ化モードを終了し、実際にグループを作成する
+            if (!isGroupMode && groupSelection.size > 1) {
+                const newGroupId = crypto.randomUUID(); // 新しいグループのためのユニークID
+                const batch = writeBatch(db);
                 
-                cubeGroups.length = 0;
-                cubeGroups.push(...remainingGroups);
+                groupSelection.forEach(cube => {
+                    const docRef = doc(cubesCollectionRef, cube.userData.firestoreId);
+                    batch.update(docRef, { groupId: newGroupId });
+                });
 
-                showUserMessage(`新しいグループを作成しました (${newGroupMembers.length}個)`);
-                deselectAll();
-            } else if (isGroupMode) {
+                try {
+                    await batch.commit();
+                    showUserMessage(`新しいグループを作成しました (${groupSelection.size}個)`);
+                } catch (error) {
+                    console.error("Group creation failed:", error);
+                    showUserMessage("グループ作成に失敗しました。");
+                } finally {
+                    deselectAll(); // 選択をクリア
+                }
+            } else if (!isGroupMode) {
+                // 選択が1つ以下なら何もしない
                 deselectAll();
             } else {
-                isGroupMode = false;
+                // グループ化モードを開始
+                deselectAll();
             }
             
             updateGroupButtonState();
         }
         
-        function ungroupSelectedGroup() {
+        // ★★★ 変更 ★★★
+        async function ungroupSelectedGroup() {
             if (!selectedGroup) return;
-            const index = cubeGroups.indexOf(selectedGroup);
-            if (index > -1) {
-                cubeGroups.splice(index, 1);
+
+            const batch = writeBatch(db);
+            selectedGroup.forEach(cube => {
+                const docRef = doc(cubesCollectionRef, cube.userData.firestoreId);
+                batch.update(docRef, { groupId: null }); // FirestoreのgroupIdをnullにする
+            });
+
+            try {
+                await batch.commit();
                 showUserMessage(`グループを解除しました。`);
+            } catch (error) {
+                console.error("Ungrouping failed:", error);
+                showUserMessage("グループ解除に失敗しました。");
+            } finally {
+                deselectAll();
             }
-            deselectAll();
         }
 
         function deselectAll() {
@@ -930,25 +966,16 @@
 
             showConfirmation(`${targets.length}個のブロックを削除しますか？`, async () => {
                 const batch = writeBatch(db);
-                const deletedCubeIds = new Set();
-
                 targets.forEach(target => {
                     if (target.userData.firestoreId) {
                         const docRef = doc(cubesCollectionRef, target.userData.firestoreId);
                         batch.delete(docRef);
-                        deletedCubeIds.add(target.userData.firestoreId);
                     }
                 });
 
                 try {
                     await batch.commit();
-                    const remainingGroups = cubeGroups
-                        .map(group => group.filter(cube => !deletedCubeIds.has(cube.userData.firestoreId)))
-                        .filter(group => group.length > 0);
-                    
-                    cubeGroups.length = 0;
-                    cubeGroups.push(...remainingGroups);
-
+                    // onSnapshotが自動でローカルの状態を更新する
                     deselectAll();
                 } catch (error) {
                     console.error("削除に失敗しました:", error);
@@ -965,12 +992,12 @@
 
             if (isGroupMode) {
                 if (clickedCube) {
-                    const containingGroup = cubeGroups.find(group => group.includes(clickedCube));
-                    const targets = containingGroup ? containingGroup : [clickedCube];
-                    
                     const isAdding = !groupSelection.has(clickedCube);
-
-                    targets.forEach(c => {
+                    const targetsToToggle = clickedCube.userData.groupId 
+                        ? cubes.filter(c => c.userData.groupId === clickedCube.userData.groupId)
+                        : [clickedCube];
+                    
+                    targetsToToggle.forEach(c => {
                         if (isAdding) {
                             groupSelection.add(c);
                         } else {
@@ -989,9 +1016,8 @@
             } else {
                 deselectAll();
                 if (clickedCube) {
-                    const containingGroup = cubeGroups.find(group => group.includes(clickedCube));
-                    if (containingGroup) {
-                        selectedGroup = containingGroup;
+                    if (clickedCube.userData.groupId) {
+                        selectedGroup = cubes.filter(c => c.userData.groupId === clickedCube.userData.groupId);
                         selectedGroup.forEach(c => c.material.color.setHex(0xe0e0e0));
                     } else {
                         selectedCube = clickedCube;
@@ -1043,7 +1069,7 @@
             
             if (!overlap) {
                 try {
-                    await addDoc(cubesCollectionRef, { x: newPosition.x, y: newPosition.y, z: newPosition.z });
+                    await addDoc(cubesCollectionRef, { x: newPosition.x, y: newPosition.y, z: newPosition.z, groupId: null });
                 } catch (e) { 
                     showUserMessage("ブロックの追加に失敗しました。"); 
                 }
@@ -1052,7 +1078,7 @@
             }
         }
         
-        function createCubeMesh(position, docId) {
+        function createCubeMesh(position, docId, groupId) { // ★★★ 変更 ★★★
             if (!docId || cubeDataMap.has(docId)) return null;
             
             const material = new THREE.MeshBasicMaterial({
@@ -1064,6 +1090,7 @@
             const cube = new THREE.Mesh(cubeGeometry, material);
             cube.position.copy(position);
             cube.userData.firestoreId = docId;
+            cube.userData.groupId = groupId || null; // ★★★ 追加 ★★★
 
             const edgesGeom = new THREE.EdgesGeometry(cube.geometry);
             const lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 3 });
@@ -1073,7 +1100,7 @@
             cube.userData.edges = edges; 
             cubes.push(cube);
             scene.add(cube);
-            cubeDataMap.set(docId, {x: position.x, y: position.y, z: position.z});
+            cubeDataMap.set(docId, {x: position.x, y: position.y, z: position.z, groupId: groupId});
             return cube;
         }
         
@@ -1096,19 +1123,15 @@
             loadingIndicator.style.display = 'block';
             if (unsubscribeFromCubes) unsubscribeFromCubes(); 
             
-            while(cubes.length > 0) {
-                scene.remove(cubes.pop());
-            }
+            // ローカルのデータをクリア
+            cubes.forEach(c => scene.remove(c));
+            cubes.length = 0;
             cubeDataMap.clear();
-            cubeGroups.length = 0;
             deselectAll();
 
             unsubscribeFromCubes = onSnapshot(query(cubesCollectionRef), (snapshot) => {
-                const changes = snapshot.docChanges();
-                
-                changes.filter(c => c.type === "removed").forEach(change => handleDocChange(change));
-                changes.filter(c => c.type !== "removed").forEach(change => handleDocChange(change));
-
+                snapshot.docChanges().forEach(change => handleDocChange(change));
+                reconstructGroupsFromAllCubes(); // ★★★ 追加 ★★★ グループを再構築
                 updateLayerState();
                 loadingIndicator.style.display = 'none';
             }, (error) => {
@@ -1116,6 +1139,21 @@
                 showUserMessage("データの同期に失敗しました。");
                 loadingIndicator.style.display = 'none';
             });
+        }
+        
+        // ★★★ 追加 ★★★
+        function reconstructGroupsFromAllCubes() {
+            const groupsMap = new Map();
+            cubes.forEach(cube => {
+                if (cube.userData.groupId) {
+                    if (!groupsMap.has(cube.userData.groupId)) {
+                        groupsMap.set(cube.userData.groupId, []);
+                    }
+                    groupsMap.get(cube.userData.groupId).push(cube);
+                }
+            });
+            cubeGroups.length = 0; // グループ配列をクリア
+            cubeGroups.push(...groupsMap.values()); // 新しいグループ配列をセット
         }
 
         function handleDocChange(change) {
@@ -1125,14 +1163,15 @@
             if (change.type === "added") {
                 if(typeof data.x === 'number' && typeof data.y === 'number' && typeof data.z === 'number') {
                     if (!cubeDataMap.has(docId)) {
-                        createCubeMesh(new THREE.Vector3(data.x,data.y,data.z), docId);
+                        createCubeMesh(new THREE.Vector3(data.x,data.y,data.z), docId, data.groupId); // ★★★ 変更 ★★★
                     }
                 }
             } else if (change.type === "modified") {
                 const c = cubes.find(c => c.userData.firestoreId === docId);
                 if (c) { 
                     c.position.set(data.x,data.y,data.z);
-                    cubeDataMap.set(docId, {x: data.x, y: data.y, z: data.z});
+                    c.userData.groupId = data.groupId || null; // ★★★ 変更 ★★★
+                    cubeDataMap.set(docId, {x: data.x, y: data.y, z: data.z, groupId: data.groupId});
                 }
             } else if (change.type === "removed") {
                 const i = cubes.findIndex(c => c.userData.firestoreId === docId);
@@ -1146,12 +1185,6 @@
                     scene.remove(cubeToRemove);
                     cubes.splice(i, 1);
                     cubeDataMap.delete(docId);
-
-                    const remainingGroups = cubeGroups
-                        .map(group => group.filter(cube => cube !== cubeToRemove))
-                        .filter(group => group.length > 0);
-                    cubeGroups.length = 0;
-                    cubeGroups.push(...remainingGroups);
                 }
             }
         }
