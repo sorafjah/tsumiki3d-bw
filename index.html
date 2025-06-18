@@ -266,6 +266,7 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection, addDoc, getDocs, deleteDoc, onSnapshot, query, serverTimestamp, writeBatch, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // Firebase configuration
         const firebaseConfig = {
             apiKey: "AIzaSyBk-lnmwZnhPTj3yQuMfRBc3u5HFXko95k",
             authDomain: "tsumiki3d.firebaseapp.com",
@@ -277,11 +278,13 @@
         
         const appId = firebaseConfig.appId;
         
+        // Firebase and App variables
         let app, auth, db, userId, currentNickname = null;
         let cubesCollectionRef, savesCollectionRef;
         let isAuthReady = false;
         let unsubscribeFromCubes = null;
 
+        // DOM Elements
         const loadingIndicator = document.getElementById('loading-indicator');
         const customModal = document.getElementById('customModal');
         const customModalMessage = document.getElementById('customModalMessage');
@@ -300,6 +303,7 @@
         const logoutButton = document.getElementById('logoutButton');
         const userInfo = document.getElementById('userInfo');
         
+        // Modal setup
         if (customModalClose) customModalClose.onclick = () => customModal.style.display = "none";
         if (saveModalClose) saveModalClose.onclick = () => saveModal.style.display = "none";
         window.onclick = event => { 
@@ -308,6 +312,7 @@
             if (event.target == confirmModal) confirmModal.style.display = "none";
         }
 
+        // --- Utility Functions ---
         function showUserMessage(message) {
             console.warn("UserMessage:", message);
             if (customModal && customModalMessage) {
@@ -328,6 +333,7 @@
             };
         }
         
+        // --- Firebase Initialization and Auth ---
         async function initializeFirebase() {
             try {
                 app = initializeApp(firebaseConfig);
@@ -375,6 +381,7 @@
             }
         }
 
+        // --- Three.js Scene Setup ---
         let scene, camera, renderer, orbitControls;
         let invisiblePlane, centerPoint;
         const cubes = [];
@@ -395,6 +402,7 @@
         const cubeSize = 1;
         const cubeGeometry = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
 
+        // --- Input Handling ---
         let lastTouchTime = 0;
         const DOUBLE_TAP_TIMEOUT = 300;
         let touchStartPointer = { x: 0, y: 0 };
@@ -440,7 +448,27 @@
                 else { onCanvasClickLogic(); lastTouchTime = currentTime; }
             } else { lastTouchTime = 0; }
         }
+        
+        // ★★★ 追加 ★★★
+        // キーが押されたときの処理を行う関数
+        function handleKeyDown(event) {
+            // DeleteキーまたはBackspaceキーが押された場合
+            if (event.key === 'Delete' || event.key === 'Backspace') {
+                // テキスト入力中などは削除処理を行わないようにする
+                const activeElement = document.activeElement;
+                if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+                    return;
+                }
+                
+                // 選択されているものがあれば削除関数を呼び出す
+                if (selectedCube || selectedGroup) {
+                    event.preventDefault(); // ブラウザのデフォルト動作（前のページに戻るなど）を防ぐ
+                    deleteSelection();
+                }
+            }
+        }
 
+        // --- Main Initialization ---
         function initThreeJS() {
             const container = document.getElementById('container');
             scene = new THREE.Scene();
@@ -479,6 +507,11 @@
             renderer.domElement.addEventListener('click', onCanvasClick, false);
             renderer.domElement.addEventListener('dblclick', onCanvasDblClick, false);
             renderer.domElement.addEventListener('touchend', onCanvasTouchEnd, false);
+
+            // ★★★ 追加 ★★★
+            // キーボード操作用のイベントリスナーを追加
+            document.addEventListener('keydown', handleKeyDown);
+
             document.getElementById('groupButton').addEventListener('click', handleGroupButtonClick);
             document.getElementById('saveLoadButton').addEventListener('click', openSavePanel);
             document.getElementById('deleteButton').addEventListener('click', deleteSelection);
@@ -491,6 +524,7 @@
             animate();
         }
         
+        // --- UI Control Setup ---
         function setupCenterPointToggle() {
             document.getElementById('toggle-center-point').addEventListener('click', (e) => {
                 if (centerPoint) {
@@ -573,6 +607,7 @@
             updateLayerVisibility();
         }
         
+        // --- Save and Load Functionality ---
         async function openSavePanel() {
             if (!isAuthReady) { showUserMessage("データベースの準備ができていません。"); return; }
             if (!currentNickname) { showUserMessage("作品を保存・読込するにはニックネームでのログインが必要です。"); return; }
@@ -681,6 +716,7 @@
             });
         }
 
+        // --- Block Manipulation Controls ---
         function setupBlockControls() {
             document.getElementById('block-controls-panel').addEventListener('click', (e) => {
                 if(e.target.classList.contains('move-block-button')) {
@@ -765,6 +801,7 @@
             }
         }
 
+        // --- Grouping Logic ---
         function handleGroupButtonClick() {
             if (selectedGroup) {
                 ungroupSelectedGroup();
@@ -836,6 +873,7 @@
             updateGroupButtonState();
         }
 
+        // --- Core Object Operations (Move, Delete, Create) ---
         async function moveSelection(axis, direction) {
             const targets = selectedGroup ? selectedGroup : (selectedCube ? [selectedCube] : []);
             if (targets.length === 0) {
@@ -964,28 +1002,24 @@
             updateGroupButtonState();
         }
 
-        // ★★★ 変更した関数 ★★★
         async function onCanvasDblClickLogic() {
             if (isGroupMode) return;
             raycaster.setFromCamera(pointer, camera);
             const visibleCubes = cubes.filter(c => c.visible);
             
-            // 1. まずブロックとの交差をチェック
             let cubeIntersects = raycaster.intersectObjects(visibleCubes, false);
             let intersect = null;
 
             if (cubeIntersects.length > 0) {
-                // ブロックにヒットした場合
                 intersect = cubeIntersects[0];
             } else {
-                // ブロックにヒットしなかった場合、地面との交差をチェック
                 let planeIntersects = raycaster.intersectObjects([invisiblePlane], false);
                 if (planeIntersects.length > 0) {
                     intersect = planeIntersects[0];
                 }
             }
 
-            if (!intersect || !intersect.face) return; // 交差がなければ終了
+            if (!intersect || !intersect.face) return;
             
             const newPosition = new THREE.Vector3();
             
@@ -1056,6 +1090,7 @@
             renderer.render(scene, camera); 
         }
 
+        // --- Firestore Data Sync ---
         async function loadCubesFromFirestore() {
             if (!isAuthReady) return;
             loadingIndicator.style.display = 'block';
@@ -1121,6 +1156,7 @@
             }
         }
         
+        // --- Application Entry Point ---
         async function startApp() {
             loadingIndicator.style.display = 'block';
             try {
